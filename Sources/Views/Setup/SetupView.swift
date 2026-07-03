@@ -36,7 +36,6 @@ private struct SetupSettingsForm: View {
     @Environment(\.appPalette) private var palette
 
     @State private var showImporter = false
-    @State private var exportBackupFile: CSVBackupExportFile?
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var showAlert = false
@@ -45,7 +44,6 @@ private struct SetupSettingsForm: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 hotTubSection
-                volumeSection
                 dataSection
                 legalSection
             }
@@ -54,12 +52,6 @@ private struct SetupSettingsForm: View {
             .padding(.bottom, AppSpacing.screenBottom)
         }
         .scrollDismissesKeyboard(.interactively)
-        .sheet(item: $exportBackupFile) { file in
-            CSVFilesExportPresenter(fileURL: file.url) { result in
-                handleExportResult(result, tempURL: file.url)
-            }
-            .ignoresSafeArea()
-        }
         .fileImporter(
             isPresented: $showImporter,
             allowedContentTypes: [.commaSeparatedText],
@@ -134,26 +126,11 @@ private struct SetupSettingsForm: View {
         }
     }
 
-    private var volumeSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.control) {
-            AppSectionHeader(
-                title: "Volume",
-                subtitle: "Stored with your tub settings for future reference"
-            )
-
-            AppSettingsValueRow(
-                label: "Estimated litres",
-                value: String(format: "%.0f L", settings.volumeLitres)
-            )
-            .appCard(palette: palette, padding: 0)
-        }
-    }
-
     private var dataSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             AppSectionHeader(
                 title: "Data",
-                subtitle: "Save a CSV backup to Files, or import log records from another file"
+                subtitle: "Backups save automatically to the Files app, or import log records from another file"
             )
 
             VStack(spacing: 0) {
@@ -197,27 +174,15 @@ private struct SetupSettingsForm: View {
     private func saveCSVBackup() {
         do {
             let csv = try HotTubCSVService.exportCSV(in: modelContext)
-            let url = try CSVBackupFileWriter.writeTemporaryCSV(
+            let url = try CSVBackupFileWriter.writeBackupCSV(
                 text: csv,
                 filename: HotTubCSVService.suggestedExportFilename()
             )
-            exportBackupFile = CSVBackupExportFile(url: url)
+            presentAlert(
+                title: "Backup saved",
+                message: "Saved as \(url.lastPathComponent) in Files → On My iPhone → Hot Tub Buddy → Backups."
+            )
         } catch {
-            presentAlert(title: "Backup failed", message: error.localizedDescription)
-        }
-    }
-
-    private func handleExportResult(_ result: Result<URL, Error>, tempURL: URL) {
-        exportBackupFile = nil
-        try? FileManager.default.removeItem(at: tempURL)
-
-        switch result {
-        case .success:
-            presentAlert(title: "Backup saved", message: "Your data was saved as a CSV file.")
-        case .failure(let error):
-            if error is CancellationError { return }
-            let nsError = error as NSError
-            if nsError.domain == NSCocoaErrorDomain, nsError.code == NSUserCancelledError { return }
             presentAlert(title: "Backup failed", message: error.localizedDescription)
         }
     }
@@ -251,11 +216,6 @@ private struct SetupSettingsForm: View {
         alertMessage = message
         showAlert = true
     }
-}
-
-private struct CSVBackupExportFile: Identifiable {
-    let id = UUID()
-    let url: URL
 }
 
 private struct AppSettingsActionRow: View {

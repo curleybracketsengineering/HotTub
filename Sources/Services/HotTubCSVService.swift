@@ -323,12 +323,14 @@ enum HotTubCSVService {
     }
 
     private static func usageRow(_ log: UsageLogEntry) -> [String: String] {
-        [
+        var row: [String: String] = [
             "type": "usage",
             "logged_at": exportDateFormatter.string(from: log.loggedAt),
             "num_users": String(log.numUsers),
             "duration_minutes": String(log.durationMinutes),
         ]
+        if let value = log.waterTemperature { row["water_temperature"] = String(value) }
+        return row
     }
 
     // MARK: - Insert helpers
@@ -390,7 +392,8 @@ enum HotTubCSVService {
         let log = UsageLogEntry(
             loggedAt: loggedAt,
             numUsers: numUsers,
-            durationMinutes: duration
+            durationMinutes: duration,
+            waterTemperature: parseInt(fields["water_temperature"])
         )
         context.insert(log)
         return true

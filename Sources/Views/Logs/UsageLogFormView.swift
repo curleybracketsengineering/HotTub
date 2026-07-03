@@ -16,6 +16,7 @@ struct UsageLogFormView: View {
     @State private var loggedAt: Date = .now
     @State private var numUsers = 1
     @State private var durationMinutes = 15
+    @State private var waterTemp = 37
 
     @State private var alertMessage: String?
     @State private var showAlert = false
@@ -24,6 +25,12 @@ struct UsageLogFormView: View {
     @State private var skipAutoSave = true
     @State private var baselineNumUsers = 1
     @State private var baselineDurationMinutes = 15
+    @State private var baselineWaterTemp = 37
+    @Query private var settingsRows: [AppSettings]
+
+    private var isCelsius: Bool {
+        settingsRows.first?.temperatureUnit != "fahrenheit"
+    }
 
     init(existing: UsageLogEntry? = nil) {
         self.existing = existing
@@ -40,6 +47,12 @@ struct UsageLogFormView: View {
             Section {
                 Stepper("People: \(numUsers)", value: $numUsers, in: 1 ... 20)
                 Stepper("Duration: \(durationMinutes) min", value: $durationMinutes, in: 5 ... 480, step: 5)
+                Stepper(
+                    "Water \(isCelsius ? "°C" : "°F"): \(waterTemp)",
+                    value: $waterTemp,
+                    in: isCelsius ? 10 ... 45 : 50 ... 110,
+                    step: 1
+                )
             } header: {
                 Text("Session")
             }
@@ -60,15 +73,20 @@ struct UsageLogFormView: View {
         }
         .onAppear {
             HotTubModelContainer.seedIfNeeded(in: modelContext)
+            let defaultWaterTemp = isCelsius ? 37 : 98
             if let e = existing {
                 loggedAt = e.loggedAt
                 numUsers = e.numUsers
                 durationMinutes = e.durationMinutes
+                waterTemp = e.waterTemperature ?? defaultWaterTemp
                 baselineNumUsers = e.numUsers
                 baselineDurationMinutes = e.durationMinutes
+                baselineWaterTemp = e.waterTemperature ?? defaultWaterTemp
             } else {
+                waterTemp = defaultWaterTemp
                 baselineNumUsers = numUsers
                 baselineDurationMinutes = durationMinutes
+                baselineWaterTemp = defaultWaterTemp
             }
             skipAutoSave = false
         }
@@ -95,12 +113,16 @@ struct UsageLogFormView: View {
         UsageFormSnapshot(
             loggedAt: loggedAt,
             numUsers: numUsers,
-            durationMinutes: durationMinutes
+            durationMinutes: durationMinutes,
+            waterTemp: waterTemp
         )
     }
 
     private var hasDraftContent: Bool {
-        existing != nil || numUsers != baselineNumUsers || durationMinutes != baselineDurationMinutes
+        existing != nil
+            || numUsers != baselineNumUsers
+            || durationMinutes != baselineDurationMinutes
+            || waterTemp != baselineWaterTemp
     }
 
     private func scheduleAutoSave() {
@@ -121,7 +143,8 @@ struct UsageLogFormView: View {
             let log = UsageLogEntry(
                 loggedAt: loggedAt,
                 numUsers: numUsers,
-                durationMinutes: durationMinutes
+                durationMinutes: durationMinutes,
+                waterTemperature: waterTemp
             )
             modelContext.insert(log)
             draftRecord = log
@@ -131,6 +154,7 @@ struct UsageLogFormView: View {
         record.loggedAt = loggedAt
         record.numUsers = numUsers
         record.durationMinutes = durationMinutes
+        record.waterTemperature = waterTemp
         try? modelContext.save()
         return true
     }
@@ -148,7 +172,9 @@ struct UsageLogFormView: View {
     }
 
     private func isEmptyDraft(_ record: UsageLogEntry) -> Bool {
-        record.numUsers == baselineNumUsers && record.durationMinutes == baselineDurationMinutes
+        record.numUsers == baselineNumUsers
+            && record.durationMinutes == baselineDurationMinutes
+            && record.waterTemperature == baselineWaterTemp
     }
 
     private func deleteLog() {
@@ -163,4 +189,5 @@ private struct UsageFormSnapshot: Equatable {
     var loggedAt: Date
     var numUsers: Int
     var durationMinutes: Int
+    var waterTemp: Int
 }

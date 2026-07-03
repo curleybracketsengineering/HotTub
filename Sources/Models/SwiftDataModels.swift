@@ -197,16 +197,19 @@ final class UsageLogEntry {
 
     var numUsers: Int
     var durationMinutes: Int
+    var waterTemperature: Int?
 
     init(
         loggedAt: Date,
         createdAt: Date = .now,
         numUsers: Int = 1,
-        durationMinutes: Int = 15
+        durationMinutes: Int = 15,
+        waterTemperature: Int? = nil
     ) {
         self.loggedAt = loggedAt
         self.createdAt = createdAt
         self.numUsers = numUsers
         self.durationMinutes = durationMinutes
+        self.waterTemperature = waterTemperature
     }
 }
