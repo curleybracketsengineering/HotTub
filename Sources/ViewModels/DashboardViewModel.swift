@@ -42,12 +42,7 @@ enum DashboardActivity: Identifiable {
     }
 
     var title: String {
-        switch self {
-        case .daily: return "Daily Log"
-        case .weekly: return "Weekly Check"
-        case .maintenance(let x): return x.action.isEmpty ? "Service" : x.action
-        case .usage: return "Hot Tub Usage"
-        }
+        historyRow.title
     }
 
     var accentToken: PaletteToken {
@@ -71,7 +66,9 @@ enum DashboardActivity: Identifiable {
 @MainActor
 final class DashboardViewModel: ObservableObject {
     @Published private(set) var latestDailyLog: HotTubDailyLog?
-    @Published private(set) var recentActivity: [DashboardActivity] = []
+    @Published private(set) var latestWeeklyLog: WeeklyCheckLog?
+    @Published private(set) var recentRecords: [DashboardActivity] = []
+    @Published private(set) var dueReminders: [HomeReminder] = []
     @Published private(set) var isBromine: Bool = false
 
     func reload(context: ModelContext) {
@@ -79,27 +76,30 @@ final class DashboardViewModel: ObservableObject {
 
         let daily = (try? context.fetch(FetchDescriptor<HotTubDailyLog>())) ?? []
         let weekly = (try? context.fetch(FetchDescriptor<WeeklyCheckLog>())) ?? []
-        let maintenance = (try? context.fetch(FetchDescriptor<MaintenanceLogEntry>())) ?? []
-        let usage = (try? context.fetch(FetchDescriptor<UsageLogEntry>())) ?? []
         let settingsList = (try? context.fetch(FetchDescriptor<AppSettings>())) ?? []
         let settings = settingsList.first
 
         let sortedDaily = daily.sorted { $0.loggedAt > $1.loggedAt }
+        let sortedWeekly = weekly.sorted { $0.loggedAt > $1.loggedAt }
         latestDailyLog = sortedDaily.first
+        latestWeeklyLog = sortedWeekly.first
 
         isBromine = settings?.isBromine ?? false
 
-        var combined: [DashboardActivity] = []
-        combined.append(contentsOf: daily.map { .daily($0) })
-        combined.append(contentsOf: weekly.map { .weekly($0) })
-        combined.append(contentsOf: maintenance.map { .maintenance($0) })
-        combined.append(contentsOf: usage.map { .usage($0) })
+        var waterRecords: [DashboardActivity] = []
+        waterRecords.append(contentsOf: daily.map { .daily($0) })
+        waterRecords.append(contentsOf: weekly.map { .weekly($0) })
 
-        combined.sort { a, b in
+        waterRecords.sort { a, b in
             if a.sortMoment != b.sortMoment { return a.sortMoment > b.sortMoment }
             return a.createdAtMoment > b.createdAtMoment
         }
-        recentActivity = Array(combined.prefix(4))
+        recentRecords = Array(waterRecords.prefix(3))
+
+        dueReminders = buildDueReminders(
+            lastDaily: latestDailyLog?.loggedAt,
+            lastWeekly: latestWeeklyLog?.loggedAt
+        )
     }
 
     func delete(_ item: DashboardActivity, context: ModelContext) {
@@ -143,7 +143,31 @@ final class DashboardViewModel: ObservableObject {
 
     /// True when the latest daily log is more than 24 hours old.
     var readingsAreStale: Bool {
-        guard let log = latestDailyLog else { return false }
-        return Date().timeIntervalSince(log.loggedAt) > 24 * 60 * 60
+        guard let lastDaily = latestDailyLog?.loggedAt else { return false }
+        return ReminderSchedule.isDailyDue(lastLog: lastDaily)
+    }
+
+    private func buildDueReminders(lastDaily: Date?, lastWeekly: Date?) -> [HomeReminder] {
+        var reminders: [HomeReminder] = []
+
+        if ReminderSchedule.isDailyDue(lastLog: lastDaily) {
+            reminders.append(
+                HomeReminder(
+                    kind: .dailyWaterTest,
+                    dueDate: ReminderSchedule.dailyDueDate(after: lastDaily)
+                )
+            )
+        }
+
+        if ReminderSchedule.isWeeklyDue(lastCheck: lastWeekly) {
+            reminders.append(
+                HomeReminder(
+                    kind: .weeklyWaterCheck,
+                    dueDate: ReminderSchedule.weeklyDueDate(after: lastWeekly)
+                )
+            )
+        }
+
+        return reminders.sorted { $0.dueDate < $1.dueDate }
     }
 }

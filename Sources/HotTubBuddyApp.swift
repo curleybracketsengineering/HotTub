@@ -8,6 +8,10 @@ import SwiftUI
 
 @main
 struct HotTubBuddyApp: App {
+    init() {
+        _ = ReminderNotificationService.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

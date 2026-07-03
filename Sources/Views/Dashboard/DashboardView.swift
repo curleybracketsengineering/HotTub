@@ -6,27 +6,84 @@
 import Combine
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
+    @Environment(\.openURL) private var openURL
+    @ObservedObject private var notificationService = ReminderNotificationService.shared
     @StateObject private var viewModel = DashboardViewModel()
+
+    @State private var showNotificationSettings = false
+    @State private var showNotificationsDeniedAlert = false
+    @State private var navigateToDailyLog = false
+    @State private var navigateToWeeklyCheck = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 statusCard
-                quickActions
-                recentActivity
+                actionsSection
+                recentRecords
+                remindersSection
             }
             .appScrollScreenPadding()
         }
         .appGroupedScreenBackground(palette)
-        .navigationTitle("Dashboard")
+        .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.large)
-        .task { viewModel.reload(context: modelContext) }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await handleBellTap() }
+                } label: {
+                    Image(systemName: "bell")
+                        .font(.body.weight(.semibold))
+                        .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
+                }
+                .accessibilityLabel("Notifications")
+            }
+        }
+        .task {
+            viewModel.reload(context: modelContext)
+            await notificationService.refreshAuthorizationStatus()
+            await notificationService.reschedule(context: modelContext)
+        }
         .onAppear { viewModel.reload(context: modelContext) }
-        .refreshable { viewModel.reload(context: modelContext) }
+        .refreshable {
+            viewModel.reload(context: modelContext)
+            await notificationService.reschedule(context: modelContext)
+        }
+        .sheet(isPresented: $showNotificationSettings) {
+            NotificationSettingsSheet(notificationService: notificationService)
+        }
+        .alert("Notifications are off", isPresented: $showNotificationsDeniedAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    openURL(url)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Turn on notifications in Settings to get water test reminders.")
+        }
+        .navigationDestination(isPresented: $navigateToDailyLog) {
+            DailyLogFormView()
+        }
+        .navigationDestination(isPresented: $navigateToWeeklyCheck) {
+            WeeklyLogFormView()
+        }
+        .onChange(of: notificationService.pendingDestination) { _, destination in
+            guard let destination else { return }
+            switch destination {
+            case .dailyLog:
+                navigateToDailyLog = true
+            case .weeklyCheck:
+                navigateToWeeklyCheck = true
+            }
+            notificationService.pendingDestination = nil
+        }
     }
 
     private var statusCard: some View {
@@ -46,16 +103,14 @@ struct DashboardView: View {
 
                 Spacer()
 
-                if !isStale {
-                    Text(
-                        log.map { "Last checked: \(formatShortDate($0.loggedAt))" } ?? "No records yet"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.color(.onAccent))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.2))
-                    .clipShape(Capsule())
+                if hasData, !isStale, let log {
+                    Text("Last checked: \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.color(.onAccent))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
                 }
             }
 
@@ -96,12 +151,20 @@ struct DashboardView: View {
 
     @ViewBuilder
     private func freshStatusContent(log: HotTubDailyLog?, hasData: Bool) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text(hasData ? "Latest readings" : "Your hot tub")
-                .font(.body)
-                .foregroundStyle(palette.color(.onAccent).opacity(0.85))
+        Text(hasData ? "Water status" : "Your hot tub")
+            .font(.body)
+            .foregroundStyle(palette.color(.onAccent).opacity(0.85))
 
-            Spacer(minLength: 0)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(
+                log.map {
+                    viewModel.statusSummary(ph: $0.ph, sanitizer: $0.primarySanitizerPpm)
+                } ?? "Ready to start?"
+            )
+            .font(.system(size: 28, weight: .heavy))
+            .foregroundStyle(palette.color(.onAccent))
+            .lineLimit(2)
+            .minimumScaleFactor(0.7)
 
             if hasData {
                 AppInfoButton(
@@ -110,18 +173,9 @@ struct DashboardView: View {
                     foreground: palette.color(.onAccent).opacity(0.75)
                 )
             }
-        }
 
-        Text(
-            log.map {
-                viewModel.statusSummary(ph: $0.ph, sanitizer: $0.primarySanitizerPpm)
-            } ?? "Ready to start?"
-        )
-        .font(.system(size: 28, weight: .heavy))
-        .foregroundStyle(palette.color(.onAccent))
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
-        .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
+        }
 
         readingsRow(log: log)
     }
@@ -134,7 +188,7 @@ struct DashboardView: View {
                 .foregroundStyle(palette.color(.onAccent))
 
             if let log {
-                Text("Last checked \(formatShortDate(log.loggedAt))")
+                Text("Last checked \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(palette.color(.onAccent).opacity(0.75))
             }
@@ -142,24 +196,11 @@ struct DashboardView: View {
 
         readingsRow(log: log)
             .opacity(0.72)
-
-        NavigationLink {
-            DailyLogFormView()
-        } label: {
-            Text("Log today's readings")
-                .font(.headline)
-                .foregroundStyle(palette.color(.accentBlue))
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 50)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private func readingsRow(log: HotTubDailyLog?) -> some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.isBromine ? "Bromine" : "Chlorine")
                     .font(.caption)
@@ -174,8 +215,14 @@ struct DashboardView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Rectangle()
+                .fill(palette.color(.onAccent).opacity(0.25))
+                .frame(width: 1, height: 40)
+
             VStack(alignment: .leading, spacing: 4) {
-                Text("pH Level")
+                Text("pH")
                     .font(.caption)
                     .foregroundStyle(palette.color(.onAccent).opacity(0.65))
                 HStack(spacing: 6) {
@@ -188,6 +235,8 @@ struct DashboardView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 16)
         }
     }
 
@@ -196,39 +245,73 @@ struct DashboardView: View {
         return String(format: "%.1f ppm", ppm)
     }
 
-    private var quickActions: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.control) {
-            AppSectionHeader(title: "Quick actions")
-
-            HStack(spacing: AppSpacing.control) {
-                NavigationLink {
-                    ActivityHubView()
-                } label: {
-                    quickActionTile(
-                        title: "Log",
-                        systemImage: "list.clipboard",
-                        fillToken: .tagBlueFill,
-                        iconToken: .accentBlue
-                    )
-                }
-                .buttonStyle(.plain)
-
-                NavigationLink {
-                    ChartsScreenView()
-                } label: {
-                    quickActionTile(
-                        title: "Charts",
-                        systemImage: "chart.bar.fill",
-                        fillToken: .tagGreenFill,
-                        iconToken: .accentGreen
-                    )
-                }
-                .buttonStyle(.plain)
-            }
+    private var actionsSection: some View {
+        VStack(spacing: AppSpacing.control) {
+            mainActionButton
+            subActionRow
         }
     }
 
-    private func quickActionTile(
+    private var mainActionButton: some View {
+        NavigationLink {
+            DailyLogFormView()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                Text("Record water test")
+                    .font(.headline)
+            }
+            .foregroundStyle(palette.color(.onAccent))
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 50)
+            .background(palette.color(.accentBlue))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var subActionRow: some View {
+        HStack(spacing: AppSpacing.control) {
+            NavigationLink {
+                UsageLogFormView()
+            } label: {
+                subActionTile(
+                    title: "Log hot-tub usage",
+                    systemImage: "drop.fill",
+                    fillToken: .tagBlueFill,
+                    iconToken: .accentBlue
+                )
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                MaintenanceLogFormView()
+            } label: {
+                subActionTile(
+                    title: "Record maintenance",
+                    systemImage: "wrench.fill",
+                    fillToken: .tagGreenFill,
+                    iconToken: .accentGreen
+                )
+            }
+            .buttonStyle(.plain)
+
+            NavigationLink {
+                HistoryView()
+            } label: {
+                subActionTile(
+                    title: "View history",
+                    systemImage: "clock.arrow.circlepath",
+                    fillToken: .tagBlueFill,
+                    iconToken: .accentIndigo
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func subActionTile(
         title: String,
         systemImage: String,
         fillToken: PaletteToken,
@@ -238,22 +321,27 @@ struct DashboardView: View {
             Image(systemName: systemImage)
                 .font(.title2)
                 .foregroundStyle(palette.color(iconToken))
-                .padding(10)
+                .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
                 .background(palette.color(fillToken))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.color(.textPrimary))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
+        .padding(.horizontal, 8)
         .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
     }
 
-    private var recentActivity: some View {
+    private var recentRecords: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             HStack(alignment: .firstTextBaseline) {
-                AppSectionHeader(title: "Recent activity")
+                AppSectionHeader(title: "Recent records")
                 Spacer()
                 NavigationLink("See all") {
                     HistoryView()
@@ -261,17 +349,81 @@ struct DashboardView: View {
                 .font(.subheadline.weight(.medium))
             }
 
-            if viewModel.recentActivity.isEmpty {
+            if viewModel.recentRecords.isEmpty {
                 AppEmptyState(
                     symbol: "clock.arrow.circlepath",
-                    title: "No activity yet",
-                    message: "Log a daily reading or usage session to see it here."
+                    title: "No records yet",
+                    message: "Log a daily reading or weekly check to see it here."
                 )
             } else {
-                ForEach(viewModel.recentActivity) { item in
+                ForEach(viewModel.recentRecords) { item in
                     activityRow(item)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var remindersSection: some View {
+        if !viewModel.dueReminders.isEmpty {
+            VStack(alignment: .leading, spacing: AppSpacing.control) {
+                AppSectionHeader(title: "Reminders")
+
+                ForEach(viewModel.dueReminders) { reminder in
+                    reminderRow(reminder)
+                }
+            }
+        }
+    }
+
+    private func reminderRow(_ reminder: HomeReminder) -> some View {
+        NavigationLink {
+            reminderDestination(reminder.kind)
+        } label: {
+            HStack(spacing: AppSpacing.control) {
+                Image(systemName: "calendar")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(palette.color(.accentOrange))
+                    .frame(width: 40, height: 40)
+                    .background(palette.color(.statusWarningFill))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(reminder.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.color(.textPrimary))
+                    Text(reminder.dueSubtitle())
+                        .font(.caption)
+                        .foregroundStyle(palette.color(.textSecondary))
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.color(.textTertiary))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
+                    .fill(palette.color(.statusWarningFill))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
+                    .strokeBorder(palette.color(.statusWarningBorder).opacity(0.5), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func reminderDestination(_ kind: ReminderKind) -> some View {
+        switch kind {
+        case .dailyWaterTest:
+            DailyLogFormView()
+        case .weeklyWaterCheck:
+            WeeklyLogFormView()
         }
     }
 
@@ -286,6 +438,7 @@ struct DashboardView: View {
         .contextMenu {
             Button(role: .destructive) {
                 viewModel.delete(item, context: modelContext)
+                Task { await notificationService.reschedule(context: modelContext) }
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -306,10 +459,61 @@ struct DashboardView: View {
         }
     }
 
-    private func formatShortDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "dd MMM yy"
-        return f.string(from: date)
+    private func handleBellTap() async {
+        await notificationService.refreshAuthorizationStatus()
+        switch notificationService.authorizationStatus {
+        case .notDetermined:
+            let granted = await notificationService.requestAuthorization()
+            if !granted {
+                showNotificationsDeniedAlert = true
+            }
+        case .denied:
+            showNotificationsDeniedAlert = true
+        default:
+            showNotificationSettings = true
+        }
     }
+}
 
+private struct NotificationSettingsSheet: View {
+    @ObservedObject var notificationService: ReminderNotificationService
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appPalette) private var palette
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Toggle("Water test reminders", isOn: Binding(
+                        get: { notificationService.remindersEnabled },
+                        set: { notificationService.remindersEnabled = $0 }
+                    ))
+                } footer: {
+                    Text("Get reminded when a daily test or weekly check is due.")
+                }
+
+                if notificationService.remindersEnabled {
+                    Section("Reminder time") {
+                        DatePicker(
+                            "Time",
+                            selection: Binding(
+                                get: { notificationService.preferredReminderTime },
+                                set: { notificationService.preferredReminderTime = $0 }
+                            ),
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+                }
+            }
+            .navigationTitle("Notifications")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .appPalette(palette.colorScheme)
+    }
 }

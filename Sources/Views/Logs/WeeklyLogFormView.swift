@@ -309,6 +309,7 @@ struct WeeklyLogFormView: View {
 
         apply(to: record, shockVal: shockVal)
         try? modelContext.save()
+        Task { await ReminderNotificationService.shared.reschedule(context: modelContext) }
         return true
     }
 

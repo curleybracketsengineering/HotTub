@@ -164,7 +164,7 @@ enum HistoryRow: Identifiable {
     var title: String {
         switch self {
         case .daily: return "Daily log"
-        case .weekly: return "Weekly check"
+        case .weekly: return "Full water check"
         case .maintenance(let x): return x.action.isEmpty ? "Service" : x.action
         case .usage: return "Hot tub usage"
         }

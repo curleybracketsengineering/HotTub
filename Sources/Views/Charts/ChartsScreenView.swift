@@ -20,14 +20,24 @@ private struct UserBarPoint: Identifiable {
     let count: Int
 }
 
+private struct ChemistryPeriodSummary {
+    let testsRecorded: Int
+    let phReadingCount: Int
+    let phInRangePercent: Int?
+    let sanitizerReadingCount: Int
+    let sanitizerLowCount: Int
+}
+
 private enum ChartRange: String, CaseIterable {
-    case last7Days = "7 days"
+    case last7Days = "Week"
     case month = "Month"
+    case threeMonths = "3 months"
 }
 
 struct ChartsScreenView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @Query(sort: \HotTubDailyLog.loggedAt, order: .forward) private var allDaily: [HotTubDailyLog]
     @Query(sort: \UsageLogEntry.loggedAt, order: .forward) private var allUsage: [UsageLogEntry]
@@ -73,6 +83,50 @@ struct ChartsScreenView: View {
 
     private var canAdvanceSevenDayWindow: Bool {
         sevenDayWeekStart < currentWeekMonday
+    }
+
+    private var availableChartRanges: [ChartRange] {
+        horizontalSizeClass == .regular ? ChartRange.allCases : [.last7Days, .month]
+    }
+
+    private var threeMonthsStart: Date {
+        let cal = Calendar.current
+        let anchor = cal.date(from: cal.dateComponents([.year, .month], from: todayStart)) ?? todayStart
+        return cal.date(byAdding: .month, value: -2, to: anchor) ?? anchor
+    }
+
+    private var threeMonthsEnd: Date {
+        todayStart
+    }
+
+    private var threeMonthsLabel: String {
+        let startFormatter = DateFormatter()
+        startFormatter.dateFormat = "d MMM"
+        let endFormatter = DateFormatter()
+        endFormatter.dateFormat = "d MMM yyyy"
+        return "\(startFormatter.string(from: threeMonthsStart)) – \(endFormatter.string(from: threeMonthsEnd))"
+    }
+
+    private var emptyStatePeriodTitle: String {
+        switch chartRange {
+        case .last7Days:
+            return "No data in this period"
+        case .month:
+            return "No data for \(monthLabel)"
+        case .threeMonths:
+            return "No data in the last 3 months"
+        }
+    }
+
+    private var noDataPeriodPhrase: String {
+        switch chartRange {
+        case .last7Days:
+            return last7DaysLabel
+        case .month:
+            return "this month"
+        case .threeMonths:
+            return "the last 3 months"
+        }
     }
 
     private var viewMonthStart: Date {
@@ -130,6 +184,8 @@ struct ChartsScreenView: View {
             return day >= last7DaysStart && day <= last7DaysEnd
         case .month:
             return cal.isDate(day, equalTo: viewMonth, toGranularity: .month)
+        case .threeMonths:
+            return day >= threeMonthsStart && day <= threeMonthsEnd
         }
     }
 
@@ -145,6 +201,8 @@ struct ChartsScreenView: View {
             }
             let monthEnd = cal.date(byAdding: .day, value: -1, to: interval.end) ?? interval.start
             return cal.startOfDay(for: interval.start) ... cal.startOfDay(for: monthEnd)
+        case .threeMonths:
+            return threeMonthsStart ... threeMonthsEnd
         }
     }
 
@@ -177,8 +235,28 @@ struct ChartsScreenView: View {
         return dates
     }
 
+    /// First of each month in the rolling 3-month window.
+    private var threeMonthMarkDates: [Date] {
+        let cal = Calendar.current
+        var dates: [Date] = []
+        var month = threeMonthsStart
+        while month <= threeMonthsEnd {
+            dates.append(month)
+            guard let next = cal.date(byAdding: .month, value: 1, to: month) else { break }
+            month = next
+        }
+        return dates
+    }
+
     private var xAxisMarkDates: [Date] {
-        chartRange == .month ? monthMondayMarkDates : sevenDayMarkDates
+        switch chartRange {
+        case .month:
+            return monthMondayMarkDates
+        case .last7Days:
+            return sevenDayMarkDates
+        case .threeMonths:
+            return threeMonthMarkDates
+        }
     }
 
     private var filteredDailyLogs: [HotTubDailyLog] {
@@ -239,6 +317,56 @@ struct ChartsScreenView: View {
         (showPH && !phMarks.isEmpty) || (showSanitizer && !sanitizerMarks.isEmpty)
     }
 
+    private var chemistryPeriodSummary: ChemistryPeriodSummary? {
+        let logs = filteredDailyLogs
+        guard !logs.isEmpty else { return nil }
+
+        let phValues = logs.compactMap(\.ph)
+        let phInRangePercent: Int? = phValues.isEmpty
+            ? nil
+            : Int((Double(phValues.filter { WaterChemistryRanges.phIdeal.contains($0) }.count)
+                / Double(phValues.count) * 100).rounded())
+
+        let idealMin = isBromine
+            ? WaterChemistryRanges.bromineIdeal.lowerBound
+            : WaterChemistryRanges.chlorineIdeal.lowerBound
+        let sanitizerValues = logs.compactMap(\.primarySanitizerPpm)
+        let sanitizerLowCount = sanitizerValues.filter { $0 < idealMin }.count
+
+        return ChemistryPeriodSummary(
+            testsRecorded: logs.count,
+            phReadingCount: phValues.count,
+            phInRangePercent: phInRangePercent,
+            sanitizerReadingCount: sanitizerValues.count,
+            sanitizerLowCount: sanitizerLowCount
+        )
+    }
+
+    private var chemistrySummaryTitle: String {
+        switch chartRange {
+        case .month:
+            let formatter = DateFormatter()
+            let cal = Calendar.current
+            if cal.component(.year, from: viewMonth) == cal.component(.year, from: todayStart) {
+                formatter.dateFormat = "LLLL"
+            } else {
+                formatter.dateFormat = "LLLL yyyy"
+            }
+            return "\(formatter.string(from: viewMonth)) summary"
+        case .last7Days:
+            return "\(weekPickerLabel(for: sevenDayWeekStart)) summary"
+        case .threeMonths:
+            return "Last 3 months summary"
+        }
+    }
+
+    private var showsChemistrySummary: Bool {
+        guard chemicalOn, let summary = chemistryPeriodSummary else { return false }
+        let hasPHDetail = showPH && summary.phReadingCount > 0
+        let hasSanitizerDetail = showSanitizer && summary.sanitizerReadingCount > 0
+        return summary.testsRecorded > 0 && (hasPHDetail || hasSanitizerDetail)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
@@ -254,12 +382,25 @@ struct ChartsScreenView: View {
                 } else if !hasData {
                     AppEmptyState(
                         symbol: "calendar",
-                        title: chartRange == .last7Days ? "No data in this period" : "No data for \(monthLabel)",
+                        title: emptyStatePeriodTitle,
                         message: "Add logs to see charts"
                     )
                 } else {
                     if chemicalOn {
-                        combinedChemicalChart
+                        VStack(alignment: .leading, spacing: AppSpacing.control) {
+                            if showsChemistrySummary, let summary = chemistryPeriodSummary {
+                                chemistrySummaryCard(summary)
+                            }
+                            if showSanitizer {
+                                sanitizerCompactChart
+                            }
+                            if showPH {
+                                phCompactChart
+                            }
+                            if hasVisibleChemicalSeries {
+                                chemistryStatusLegend
+                            }
+                        }
                     }
                     if showUsers {
                         usersChart
@@ -275,23 +416,99 @@ struct ChartsScreenView: View {
         .appGroupedScreenBackground(palette)
         .navigationTitle("Charts")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear { HotTubModelContainer.seedIfNeeded(in: modelContext) }
+        .onAppear {
+            HotTubModelContainer.seedIfNeeded(in: modelContext)
+            clampChartRangeIfNeeded()
+        }
+        .onChange(of: horizontalSizeClass) { _, _ in
+            clampChartRangeIfNeeded()
+        }
+    }
+
+    private func clampChartRangeIfNeeded() {
+        if !availableChartRanges.contains(chartRange) {
+            chartRange = .month
+        }
+    }
+
+    private func chemistrySummaryCard(_ summary: ChemistryPeriodSummary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(chemistrySummaryTitle)
+                .font(.headline)
+                .foregroundStyle(palette.color(.textPrimary))
+
+            Text(testsRecordedLabel(summary.testsRecorded))
+                .font(.subheadline)
+                .foregroundStyle(palette.color(.textSecondary))
+
+            if showPH, summary.phReadingCount > 0, let percent = summary.phInRangePercent {
+                summaryBullet(phInRangeLabel(percent: percent, readingCount: summary.phReadingCount))
+            }
+
+            if showSanitizer, summary.sanitizerReadingCount > 0 {
+                summaryBullet(sanitizerSummaryLabel(lowCount: summary.sanitizerLowCount))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
+    }
+
+    private func testsRecordedLabel(_ count: Int) -> String {
+        "\(count) test\(count == 1 ? "" : "s") recorded"
+    }
+
+    private func phInRangeLabel(percent: Int, readingCount: Int) -> String {
+        if percent == 100, readingCount > 0 {
+            return "pH was in range every time"
+        }
+        return "pH was in range \(percent)% of the time"
+    }
+
+    private func sanitizerSummaryLabel(lowCount: Int) -> String {
+        if lowCount == 0 {
+            return "\(sanitizerLabel) stayed in range"
+        }
+        let occasion = lowCount == 1 ? "occasion" : "occasions"
+        return "\(sanitizerLabel) was low on \(lowCount) \(occasion)"
+    }
+
+    private func summaryBullet(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("•")
+                .font(.subheadline)
+                .foregroundStyle(palette.color(.textSecondary))
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(palette.color(.textSecondary))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var periodControls: some View {
         VStack(spacing: AppSpacing.control) {
             HStack(spacing: 8) {
-                ForEach(ChartRange.allCases, id: \.self) { range in
+                ForEach(availableChartRanges, id: \.self) { range in
                     rangePill(range)
                 }
             }
 
-            if chartRange == .month {
+            switch chartRange {
+            case .month:
                 monthNav
-            } else {
+            case .last7Days:
                 sevenDayNav
+            case .threeMonths:
+                threeMonthsPeriodLabel
             }
         }
+    }
+
+    private var threeMonthsPeriodLabel: some View {
+        Text(threeMonthsLabel)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(palette.color(.textPrimary))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
     }
 
     private func rangePill(_ range: ChartRange) -> some View {
@@ -433,7 +650,7 @@ struct ChartsScreenView: View {
 
     private var toggles: some View {
         HStack(spacing: 10) {
-            togglePill(isBromine ? "BR" : "CL", on: $showSanitizer, color: palette.color(.accentBlue))
+            togglePill(sanitizerLabel, on: $showSanitizer, color: palette.color(.accentBlue))
             togglePill("pH", on: $showPH, color: palette.color(.accentGreen))
             togglePill("Users", on: $showUsers, color: palette.color(.accentOrange))
         }
@@ -462,151 +679,149 @@ struct ChartsScreenView: View {
         .foregroundStyle(palette.color(.textPrimary))
     }
 
-    private var combinedChemicalChart: some View {
-        chartCard(title: "Water chemistry") {
-            if !hasVisibleChemicalSeries {
-                Text(emptyChemicalMessage)
-                    .font(.caption)
-                    .foregroundStyle(palette.color(.textSecondary))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 200)
-            } else {
-                VStack(alignment: .leading, spacing: AppSpacing.control) {
-                    chemicalLegend
-                    dualAxisChemicalChart
-                        .frame(height: 240)
-                }
-            }
+    private var sanitizerCompactChart: some View {
+        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        let subtitle = isBromine ? "Target 3.0–5.0 ppm" : "Target 1.0–3.0 ppm"
+        return compactChemistryChart(
+            title: sanitizerLabel,
+            subtitle: subtitle,
+            marks: sanitizerMarks,
+            idealRange: ideal,
+            yDomain: sanitizerYDomain,
+            yAxisFormat: { String(format: "%.0f", $0) },
+            status: sanitizerReadingStatus(for:),
+            emptyMessage: "No \(sanitizerLabel.lowercased()) readings in \(noDataPeriodPhrase)."
+        )
+    }
+
+    private func sanitizerReadingStatus(for value: Double) -> WaterChemistryReadingStatus {
+        if isBromine {
+            WaterChemistryRanges.bromineStatus(value)
+        } else {
+            WaterChemistryRanges.chlorineStatus(value)
         }
     }
 
-    private var emptyChemicalMessage: String {
-        let window = chartRange == .last7Days ? last7DaysLabel : "this month"
-        if showPH && showSanitizer {
-            return "No pH or \(sanitizerLabel.lowercased()) readings in \(window)."
-        }
-        if showPH {
-            return "No pH readings in \(window)."
-        }
-        return "No \(sanitizerLabel.lowercased()) readings in \(window)."
+    private var phCompactChart: some View {
+        compactChemistryChart(
+            title: "pH",
+            subtitle: "Target 7.2–7.8",
+            marks: phMarks,
+            idealRange: WaterChemistryRanges.phIdeal,
+            yDomain: 6.8 ... 8.2,
+            yAxisFormat: { String(format: "%.1f", $0) },
+            status: WaterChemistryRanges.phStatus,
+            emptyMessage: "No pH readings in \(noDataPeriodPhrase)."
+        )
     }
 
-    private var chemicalLegend: some View {
+    private var chemistryStatusLegend: some View {
         HStack(spacing: 16) {
-            if showPH {
-                legendItem(color: palette.color(.accentGreen), label: "pH", axis: "left")
-            }
-            if showSanitizer {
-                legendItem(
-                    color: palette.color(.accentBlue),
-                    label: "\(sanitizerLabel) (ppm)",
-                    axis: "right"
-                )
-            }
+            statusLegendItem(color: palette.color(.accentGreen), label: "In range")
+            statusLegendItem(color: palette.color(.accentOrange), label: "Slightly outside")
+            statusLegendItem(color: palette.color(.accentRed), label: "Needs attention")
         }
         .font(.caption)
         .foregroundStyle(palette.color(.textSecondary))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func legendItem(color: Color, label: String, axis: String) -> some View {
+    private func statusLegendItem(color: Color, label: String) -> some View {
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            Circle()
                 .fill(color)
-                .frame(width: 16, height: 3)
+                .frame(width: 8, height: 8)
             Text(label)
-            Text("·")
-            Text(axis)
-                .foregroundStyle(palette.color(.textTertiary))
         }
     }
 
-    private var dualAxisChemicalChart: some View {
-        ZStack {
-            if showSanitizer, !sanitizerMarks.isEmpty {
-                Chart {
-                    ForEach(sanitizerMarks) { mark in
-                        LineMark(
-                            x: .value("Day", mark.day, unit: .day),
-                            y: .value("ppm", mark.value)
-                        )
-                        .foregroundStyle(palette.color(.accentBlue))
-                        .interpolationMethod(.catmullRom)
+    private func compactChemistryChart(
+        title: String,
+        subtitle: String,
+        marks: [ChartPoint],
+        idealRange: ClosedRange<Double>,
+        yDomain: ClosedRange<Double>,
+        yAxisFormat: @escaping (Double) -> String,
+        status: @escaping (Double) -> WaterChemistryReadingStatus,
+        emptyMessage: String
+    ) -> some View {
+        chartCard(title: title) {
+            if marks.isEmpty {
+                Text(emptyMessage)
+                    .font(.caption)
+                    .foregroundStyle(palette.color(.textSecondary))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 120)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(palette.color(.textSecondary))
 
-                        PointMark(
-                            x: .value("Day", mark.day, unit: .day),
-                            y: .value("ppm", mark.value)
+                    Chart {
+                        RectangleMark(
+                            xStart: .value("Start", chartXDomain.lowerBound, unit: .day),
+                            xEnd: .value("End", chartXDomain.upperBound, unit: .day),
+                            yStart: .value("Ideal low", idealRange.lowerBound),
+                            yEnd: .value("Ideal high", idealRange.upperBound)
                         )
-                        .foregroundStyle(palette.color(.accentBlue))
-                        .symbolSize(36)
+                        .foregroundStyle(palette.color(.statusSuccessFill))
+
+                        ForEach(marks) { mark in
+                            LineMark(
+                                x: .value("Day", mark.day, unit: .day),
+                                y: .value(title, mark.value)
+                            )
+                            .foregroundStyle(palette.color(.separator).opacity(0.6))
+                            .interpolationMethod(.catmullRom)
+                        }
+
+                        ForEach(marks) { mark in
+                            PointMark(
+                                x: .value("Day", mark.day, unit: .day),
+                                y: .value(title, mark.value)
+                            )
+                            .foregroundStyle(
+                                WaterChemistryRanges.statusColor(status(mark.value), palette: palette)
+                            )
+                            .symbolSize(44)
+                        }
                     }
-                }
-                .chartYScale(domain: sanitizerYDomain)
-                .chartYAxis {
-                    AxisMarks(position: .trailing) { value in
-                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                            .foregroundStyle(palette.color(.separator).opacity(0.5))
-                        AxisValueLabel {
-                            if let v = value.as(Double.self) {
-                                Text(String(format: "%.0f", v))
+                    .chartYScale(domain: yDomain)
+                    .chartYAxis {
+                        AxisMarks(position: .leading) { value in
+                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+                                .foregroundStyle(palette.color(.separator).opacity(0.4))
+                            AxisValueLabel {
+                                if let v = value.as(Double.self) {
+                                    Text(yAxisFormat(v))
+                                }
                             }
                         }
                     }
-                }
-                .chartXAxis {
-                    dayXAxisMarks(showLabels: true, showGrid: true)
-                }
-                .chartXScale(domain: chartXDomain)
-            }
-
-            if showPH, !phMarks.isEmpty {
-                Chart {
-                    ForEach(phMarks) { mark in
-                        LineMark(
-                            x: .value("Day", mark.day, unit: .day),
-                            y: .value("pH", mark.value)
-                        )
-                        .foregroundStyle(palette.color(.accentGreen))
-                        .interpolationMethod(.catmullRom)
-
-                        PointMark(
-                            x: .value("Day", mark.day, unit: .day),
-                            y: .value("pH", mark.value)
-                        )
-                        .foregroundStyle(palette.color(.accentGreen))
-                        .symbolSize(36)
+                    .chartXAxis {
+                        chartXAxisMarks(showLabels: true, showGrid: true)
                     }
+                    .chartXScale(domain: chartXDomain)
+                    .frame(height: 150)
                 }
-                .chartYScale(domain: 6.8 ... 8.2)
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisValueLabel {
-                            if let v = value.as(Double.self) {
-                                Text(String(format: "%.1f", v))
-                            }
-                        }
-                    }
-                }
-                .chartXAxis {
-                    let sanitizerChartVisible = showSanitizer && !sanitizerMarks.isEmpty
-                    dayXAxisMarks(
-                        showLabels: !sanitizerChartVisible,
-                        showGrid: !sanitizerChartVisible
-                    )
-                }
-                .chartXScale(domain: chartXDomain)
             }
         }
     }
 
     @AxisContentBuilder
-    private func dayXAxisMarks(showLabels: Bool, showGrid: Bool) -> some AxisContent {
+    private func chartXAxisMarks(showLabels: Bool, showGrid: Bool) -> some AxisContent {
         AxisMarks(values: xAxisMarkDates) { _ in
             if showGrid {
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                     .foregroundStyle(palette.color(.separator).opacity(0.5))
             }
             if showLabels {
-                AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                if chartRange == .threeMonths {
+                    AxisValueLabel(format: .dateTime.month(.abbreviated))
+                } else {
+                    AxisValueLabel(format: .dateTime.day().month(.abbreviated))
+                }
             }
         }
     }
@@ -618,11 +833,7 @@ struct ChartsScreenView: View {
         }
         return chartCard(title: "Users per day") {
             if barPoints.isEmpty {
-                Text(
-                    chartRange == .last7Days
-                        ? "No usage logs from \(last7DaysLabel)"
-                        : "No usage logs this month"
-                )
+                Text("No usage logs from \(noDataPeriodPhrase)")
                     .font(.caption)
                     .foregroundStyle(palette.color(.textSecondary))
                     .frame(height: 200)
@@ -637,7 +848,7 @@ struct ChartsScreenView: View {
                     }
                 }
                 .chartXAxis {
-                    dayXAxisMarks(showLabels: true, showGrid: true)
+                    chartXAxisMarks(showLabels: true, showGrid: true)
                 }
                 .chartXScale(domain: chartXDomain)
                 .frame(height: 220)

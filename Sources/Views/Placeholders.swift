@@ -76,7 +76,7 @@ private extension ActivityLogKind {
     var hubTitle: String {
         switch self {
         case .daily: "Daily log"
-        case .weekly: "Weekly check"
+        case .weekly: "Full water check"
         case .maintenance: "Service"
         case .usage: "Usage"
         }

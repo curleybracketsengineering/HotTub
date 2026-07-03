@@ -12,7 +12,7 @@ struct ActivityRowView: View {
 
     var body: some View {
         HStack(spacing: AppSpacing.control) {
-            Image(systemName: row.kind.systemImage)
+            Image(systemName: rowIcon)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(accent)
                 .frame(width: 40, height: 40)
@@ -23,50 +23,50 @@ struct ActivityRowView: View {
                 Text(row.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(palette.color(.textPrimary))
-                HStack(spacing: 8) {
-                    Text(formatShortDate(row.sortMoment))
-                    Text(timeString(row.sortMoment))
-                }
-                .font(.caption)
-                .foregroundStyle(palette.color(.textPrimary).opacity(0.75))
+                Text(RelativeDateFormatter.relativeDayAndTime(for: row.sortMoment))
+                    .font(.caption)
+                    .foregroundStyle(palette.color(.textSecondary))
+            }
 
-                if case .daily(let log) = row {
-                    HStack(spacing: 10) {
-                        if let ph = log.ph {
-                            Text("pH \(String(format: "%.1f", ph))")
-                                .font(.caption)
-                                .foregroundStyle(phWarning(log) ? palette.color(.accentOrange) : palette.color(.textSecondary))
-                        }
-                        if let ppm = log.primarySanitizerPpm {
-                            Text("\(isBromine ? "BR" : "FC") \(String(format: "%.1f", ppm))")
-                                .font(.caption)
-                                .foregroundStyle(sanitizerWarning(log) ? palette.color(.accentOrange) : palette.color(.textSecondary))
-                        }
+            Spacer(minLength: 8)
+
+            if case .daily(let log) = row {
+                HStack(spacing: 8) {
+                    if let ph = log.ph {
+                        Text("pH \(String(format: "%.1f", ph))")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(phWarning(log) ? palette.color(.accentOrange) : palette.color(.textSecondary))
+                    }
+                    if let ppm = log.primarySanitizerPpm {
+                        Text("\(isBromine ? "BR" : "CL") \(String(format: "%.1f", ppm))")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(sanitizerWarning(log) ? palette.color(.accentOrange) : palette.color(.textSecondary))
                     }
                 }
             }
-            Spacer(minLength: 0)
+
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(palette.color(.textTertiary))
         }
     }
 
+    private var rowIcon: String {
+        switch row {
+        case .weekly:
+            "checkmark.circle.fill"
+        default:
+            row.kind.systemImage
+        }
+    }
+
     private var accent: Color {
-        palette.color(row.kind.iconToken)
-    }
-
-    private func formatShortDate(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "dd MMM yy"
-        return f.string(from: date)
-    }
-
-    private func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm"
-        return f.string(from: date)
+        switch row {
+        case .weekly:
+            palette.color(.accentGreen)
+        default:
+            palette.color(row.kind.iconToken)
+        }
     }
 
     private func phWarning(_ log: HotTubDailyLog) -> Bool {

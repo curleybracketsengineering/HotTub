@@ -17,6 +17,10 @@ struct ContentView: View {
                 MainTabView()
                     .onAppear {
                         HotTubModelContainer.seedIfNeeded(in: modelContext)
+                        Task {
+                            await ReminderNotificationService.shared.refreshAuthorizationStatus()
+                            await ReminderNotificationService.shared.reschedule(context: modelContext)
+                        }
                     }
             } else {
                 DisclaimerView {

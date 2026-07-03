@@ -277,6 +277,7 @@ struct DailyLogFormView: View {
 
         apply(to: record, phVal: phVal, freeVal: freeVal, combVal: combVal)
         try? modelContext.save()
+        Task { await ReminderNotificationService.shared.reschedule(context: modelContext) }
         return true
     }
 
