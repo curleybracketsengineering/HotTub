@@ -20,6 +20,12 @@ enum RelativeDateFormatter {
         return f
     }()
 
+    private static let monthDayYear: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMM d, yyyy")
+        return f
+    }()
+
     /// "Today", "Yesterday", or short date like "Jun 26".
     static func relativeDay(for date: Date, relativeTo reference: Date = .now) -> String {
         if calendar.isDateInToday(date) { return "Today" }
@@ -30,6 +36,19 @@ enum RelativeDateFormatter {
     /// "Today, 9:15 AM" style timestamp for list rows and hero pill.
     static func relativeDayAndTime(for date: Date, relativeTo reference: Date = .now) -> String {
         "\(relativeDay(for: date, relativeTo: reference)), \(time.string(from: date))"
+    }
+
+    /// Time only, e.g. "9:15 AM" — for rows inside a day-grouped history section.
+    static func timeOnly(for date: Date) -> String {
+        time.string(from: date)
+    }
+
+    /// History section header: "Today - Jun 30, 2026", "Yesterday - …", or "Jun 28, 2026".
+    static func historySectionTitle(for date: Date, relativeTo reference: Date = .now) -> String {
+        let formatted = monthDayYear.string(from: date)
+        if calendar.isDateInToday(date) { return "Today - \(formatted)" }
+        if calendar.isDateInYesterday(date) { return "Yesterday - \(formatted)" }
+        return formatted
     }
 
     /// Due subtitle for reminders: "Due today", "Due tomorrow", "Due in N days", "Overdue".

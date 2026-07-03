@@ -7,6 +7,9 @@ import SwiftData
 import SwiftUI
 
 struct HistoryView: View {
+    /// When `true` (History tab), title and filter share one custom header row. When `false` (pushed from Dashboard), uses the system navigation bar.
+    var isTabRoot: Bool = true
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
 
@@ -20,6 +23,7 @@ struct HistoryView: View {
     @State private var filterWeekly = true
     @State private var filterMaintenance = true
     @State private var filterUsage = true
+    @State private var isFilterExpanded = false
     @State private var deleteTarget: HistoryRow?
     @State private var showDeleteConfirm = false
 
@@ -40,10 +44,31 @@ struct HistoryView: View {
         }
     }
 
+    private var daySections: [HistoryDaySection] {
+        let calendar = Calendar.current
+        var sections: [HistoryDaySection] = []
+
+        for row in combinedRows {
+            let day = calendar.startOfDay(for: row.sortMoment)
+            if let last = sections.last, calendar.isDate(last.day, inSameDayAs: day) {
+                sections[sections.count - 1] = HistoryDaySection(day: day, rows: last.rows + [row])
+            } else {
+                sections.append(HistoryDaySection(day: day, rows: [row]))
+            }
+        }
+        return sections
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
-                filterChips
+                if isTabRoot {
+                    historyHeader
+                }
+
+                if isFilterExpanded {
+                    filterChips
+                }
 
                 if combinedRows.isEmpty {
                     AppEmptyState(
@@ -52,9 +77,9 @@ struct HistoryView: View {
                         message: "Try turning on more filters, or tap Log on the dashboard."
                     )
                 } else {
-                    LazyVStack(spacing: AppSpacing.control) {
-                        ForEach(combinedRows) { row in
-                            historyRowLink(row)
+                    LazyVStack(spacing: AppSpacing.section) {
+                        ForEach(daySections) { section in
+                            daySection(section)
                         }
                     }
                 }
@@ -62,8 +87,11 @@ struct HistoryView: View {
             .appScrollScreenPadding()
         }
         .appGroupedScreenBackground(palette)
-        .navigationTitle("History")
-        .navigationBarTitleDisplayMode(.large)
+        .modifier(HistoryNavigationChrome(isTabRoot: isTabRoot, isFilterExpanded: isFilterExpanded) {
+            withAnimation(.spring(response: 0.35)) {
+                isFilterExpanded.toggle()
+            }
+        })
         .onAppear { HotTubModelContainer.seedIfNeeded(in: modelContext) }
         .confirmationDialog("Delete this record?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -75,6 +103,20 @@ struct HistoryView: View {
         }
     }
 
+    private var historyHeader: some View {
+        HStack(alignment: .center) {
+            Text("History")
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(palette.color(.textPrimary))
+            Spacer(minLength: 12)
+            AppFilterToggleButton(isExpanded: isFilterExpanded) {
+                withAnimation(.spring(response: 0.35)) {
+                    isFilterExpanded.toggle()
+                }
+            }
+        }
+    }
+
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: AppSpacing.control) {
@@ -83,17 +125,35 @@ struct HistoryView: View {
                 AppFilterChip(title: "Service", isOn: $filterMaintenance)
                 AppFilterChip(title: "Usage", isOn: $filterUsage)
             }
-            .padding(.horizontal, AppSpacing.screenHorizontal)
         }
         .padding(.horizontal, -AppSpacing.screenHorizontal)
+        .padding(.leading, AppSpacing.screenHorizontal)
+    }
+
+    private func daySection(_ section: HistoryDaySection) -> some View {
+        VStack(alignment: .leading, spacing: AppSpacing.control) {
+            Text(RelativeDateFormatter.historySectionTitle(for: section.day))
+                .font(.subheadline)
+                .foregroundStyle(palette.color(.textSecondary))
+
+            VStack(spacing: 0) {
+                ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
+                    if index > 0 {
+                        AppSettingsDivider()
+                    }
+                    historyRowLink(row)
+                }
+            }
+            .appCard(palette: palette, padding: 0)
+        }
     }
 
     private func historyRowLink(_ row: HistoryRow) -> some View {
         NavigationLink {
             destination(for: row)
         } label: {
-            ActivityRowView(row: row, isBromine: isBromine, palette: palette)
-                .appCard(palette: palette, padding: 12)
+            ActivityRowView(row: row, isBromine: isBromine, palette: palette, showsRelativeDay: false)
+                .padding(12)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -126,6 +186,34 @@ struct HistoryView: View {
         try? modelContext.save()
         deleteTarget = nil
     }
+}
+
+private struct HistoryNavigationChrome: ViewModifier {
+    let isTabRoot: Bool
+    let isFilterExpanded: Bool
+    let toggleFilter: () -> Void
+
+    func body(content: Content) -> some View {
+        if isTabRoot {
+            content.toolbar(.hidden, for: .navigationBar)
+        } else {
+            content
+                .navigationTitle("History")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        AppFilterToggleButton(isExpanded: isFilterExpanded, action: toggleFilter)
+                    }
+                }
+        }
+    }
+}
+
+private struct HistoryDaySection: Identifiable {
+    let day: Date
+    let rows: [HistoryRow]
+
+    var id: Date { day }
 }
 
 enum HistoryRow: Identifiable {

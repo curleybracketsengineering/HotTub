@@ -9,6 +9,8 @@ struct ActivityRowView: View {
     let row: HistoryRow
     let isBromine: Bool
     let palette: AppPalette
+    /// When false, shows time only (for day-grouped history lists).
+    var showsRelativeDay: Bool = true
 
     var body: some View {
         HStack(spacing: AppSpacing.control) {
@@ -23,7 +25,11 @@ struct ActivityRowView: View {
                 Text(row.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(palette.color(.textPrimary))
-                Text(RelativeDateFormatter.relativeDayAndTime(for: row.sortMoment))
+                Text(
+                    showsRelativeDay
+                        ? RelativeDateFormatter.relativeDayAndTime(for: row.sortMoment)
+                        : RelativeDateFormatter.timeOnly(for: row.sortMoment)
+                )
                     .font(.caption)
                     .foregroundStyle(palette.color(.textSecondary))
             }

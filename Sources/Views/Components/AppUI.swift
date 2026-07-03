@@ -108,6 +108,36 @@ struct AppEmptyState: View {
 
 // MARK: - Filter chip
 
+struct AppFilterToggleButton: View {
+    let isExpanded: Bool
+    let action: () -> Void
+
+    @Environment(\.appPalette) private var palette
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease")
+                Text("Filter")
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(palette.color(.accentBlue))
+            .padding(.horizontal, 16)
+            .frame(minHeight: AppSpacing.minTap)
+            .background(palette.color(.surfaceCard))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        isExpanded ? palette.color(.accentBlue) : palette.color(.separator),
+                        lineWidth: 1
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct AppFilterChip: View {
     /// Uniform width sized for the "Weekly" label at caption + horizontal inset.
     private static let uniformWidth: CGFloat = 72

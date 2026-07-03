@@ -298,7 +298,7 @@ struct DashboardView: View {
             .buttonStyle(.plain)
 
             NavigationLink {
-                HistoryView()
+                HistoryView(isTabRoot: false)
             } label: {
                 subActionTile(
                     title: "View history",
@@ -344,7 +344,7 @@ struct DashboardView: View {
                 AppSectionHeader(title: "Recent records")
                 Spacer()
                 NavigationLink("See all") {
-                    HistoryView()
+                    HistoryView(isTabRoot: false)
                 }
                 .font(.subheadline.weight(.medium))
             }
