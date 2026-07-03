@@ -47,12 +47,14 @@ struct ChartsScreenView: View {
     @State private var viewMonth: Date = Date()
     /// Monday starting the visible calendar week (7-day window ends that Sunday or today).
     @State private var sevenDayWeekStart: Date = ChartsWeekCalendar.mondayContaining(Date())
-    @State private var showSanitizer = true
-    @State private var showPH = true
-    @State private var showUsers = true
+    @State private var presentedHelp: HelpSheetRequest?
 
     private var isBromine: Bool {
         settingsRows.first?.isBromine ?? false
+    }
+
+    private var isMetric: Bool {
+        settingsRows.first?.measurementSystem != "imperial"
     }
 
     private var sanitizerLabel: String {
@@ -309,12 +311,8 @@ struct ChartsScreenView: View {
         !filteredDailyLogs.isEmpty || !filteredUsageLogs.isEmpty
     }
 
-    private var chemicalOn: Bool {
-        showSanitizer || showPH
-    }
-
     private var hasVisibleChemicalSeries: Bool {
-        (showPH && !phMarks.isEmpty) || (showSanitizer && !sanitizerMarks.isEmpty)
+        !phMarks.isEmpty || !sanitizerMarks.isEmpty
     }
 
     private var chemistryPeriodSummary: ChemistryPeriodSummary? {
@@ -342,74 +340,50 @@ struct ChartsScreenView: View {
         )
     }
 
-    private var chemistrySummaryTitle: String {
+    private var summaryPeriodPhrase: String {
         switch chartRange {
         case .month:
-            let formatter = DateFormatter()
-            let cal = Calendar.current
-            if cal.component(.year, from: viewMonth) == cal.component(.year, from: todayStart) {
-                formatter.dateFormat = "LLLL"
-            } else {
-                formatter.dateFormat = "LLLL yyyy"
-            }
-            return "\(formatter.string(from: viewMonth)) summary"
+            return "this month"
         case .last7Days:
-            return "\(weekPickerLabel(for: sevenDayWeekStart)) summary"
+            return "this week"
         case .threeMonths:
-            return "Last 3 months summary"
+            return "in the last 3 months"
         }
     }
 
     private var showsChemistrySummary: Bool {
-        guard chemicalOn, let summary = chemistryPeriodSummary else { return false }
-        let hasPHDetail = showPH && summary.phReadingCount > 0
-        let hasSanitizerDetail = showSanitizer && summary.sanitizerReadingCount > 0
-        return summary.testsRecorded > 0 && (hasPHDetail || hasSanitizerDetail)
+        guard let summary = chemistryPeriodSummary else { return false }
+        return summary.testsRecorded > 0
+            && (summary.phReadingCount > 0 || summary.sanitizerReadingCount > 0)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 periodControls
-                toggles
 
-                if !chemicalOn && !showUsers {
-                    AppEmptyState(
-                        symbol: "chart.xyaxis.line",
-                        title: "No layers selected",
-                        message: "Turn on at least one chart layer to see trends."
-                    )
-                } else if !hasData {
+                if hasData, showsChemistrySummary, let summary = chemistryPeriodSummary {
+                    chemistrySummarySection(summary)
+                }
+
+                if !hasData {
                     AppEmptyState(
                         symbol: "calendar",
                         title: emptyStatePeriodTitle,
                         message: "Add logs to see charts"
                     )
                 } else {
-                    if chemicalOn {
-                        VStack(alignment: .leading, spacing: AppSpacing.control) {
-                            if showsChemistrySummary, let summary = chemistryPeriodSummary {
-                                chemistrySummaryCard(summary)
-                            }
-                            if showSanitizer {
-                                sanitizerCompactChart
-                            }
-                            if showPH {
-                                phCompactChart
-                            }
-                            if hasVisibleChemicalSeries {
-                                chemistryStatusLegend
-                            }
+                    VStack(alignment: .leading, spacing: AppSpacing.control) {
+                        sanitizerCompactChart
+                        phCompactChart
+                        if hasVisibleChemicalSeries {
+                            chemistryStatusLegend
                         }
                     }
-                    if showUsers {
-                        usersChart
-                    }
+                    usersChart
                 }
 
-                if showSanitizer || showPH || showUsers {
-                    guideSection
-                }
+                guideSection
             }
             .appScrollScreenPadding()
         }
@@ -423,6 +397,7 @@ struct ChartsScreenView: View {
         .onChange(of: horizontalSizeClass) { _, _ in
             clampChartRangeIfNeeded()
         }
+        .helpSheet(presentedHelp: $presentedHelp, isBromine: isBromine, isMetric: isMetric)
     }
 
     private func clampChartRangeIfNeeded() {
@@ -431,57 +406,124 @@ struct ChartsScreenView: View {
         }
     }
 
-    private func chemistrySummaryCard(_ summary: ChemistryPeriodSummary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(chemistrySummaryTitle)
-                .font(.headline)
+    private func chemistrySummarySection(_ summary: ChemistryPeriodSummary) -> some View {
+        VStack(spacing: AppSpacing.control) {
+            HStack(alignment: .top, spacing: AppSpacing.control) {
+                if summary.phReadingCount > 0, let percent = summary.phInRangePercent {
+                    phSummaryCard(percent: percent)
+                }
+                if summary.sanitizerReadingCount > 0 {
+                    sanitizerSummaryCard(lowCount: summary.sanitizerLowCount)
+                }
+            }
+
+            if summary.phReadingCount > 0 {
+                chemistryTipBanner
+            }
+        }
+    }
+
+    private func phSummaryCard(percent: Int) -> some View {
+        VStack(spacing: 12) {
+            ChartsSummaryRing(
+                progress: Double(percent) / 100,
+                color: palette.color(.accentGreen),
+                trackColor: palette.color(.accentGreen).opacity(0.2),
+                label: "\(percent)%"
+            )
+
+            Text("pH in range")
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.color(.textPrimary))
 
-            Text(testsRecordedLabel(summary.testsRecorded))
-                .font(.subheadline)
+            Text("\(percent)% of readings in range \(summaryPeriodPhrase).")
+                .font(.caption)
                 .foregroundStyle(palette.color(.textSecondary))
-
-            if showPH, summary.phReadingCount > 0, let percent = summary.phInRangePercent {
-                summaryBullet(phInRangeLabel(percent: percent, readingCount: summary.phReadingCount))
-            }
-
-            if showSanitizer, summary.sanitizerReadingCount > 0 {
-                summaryBullet(sanitizerSummaryLabel(lowCount: summary.sanitizerLowCount))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
-    }
-
-    private func testsRecordedLabel(_ count: Int) -> String {
-        "\(count) test\(count == 1 ? "" : "s") recorded"
-    }
-
-    private func phInRangeLabel(percent: Int, readingCount: Int) -> String {
-        if percent == 100, readingCount > 0 {
-            return "pH was in range every time"
-        }
-        return "pH was in range \(percent)% of the time"
-    }
-
-    private func sanitizerSummaryLabel(lowCount: Int) -> String {
-        if lowCount == 0 {
-            return "\(sanitizerLabel) stayed in range"
-        }
-        let occasion = lowCount == 1 ? "occasion" : "occasions"
-        return "\(sanitizerLabel) was low on \(lowCount) \(occasion)"
-    }
-
-    private func summaryBullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("•")
-                .font(.subheadline)
-                .foregroundStyle(palette.color(.textSecondary))
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(palette.color(.textSecondary))
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
+        .appCard(palette: palette, radius: AppSpacing.cardRadius, padding: 16)
+    }
+
+    private func sanitizerSummaryCard(lowCount: Int) -> some View {
+        let inRange = lowCount == 0
+        return VStack(spacing: 12) {
+            if inRange {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 40, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(palette.color(.accentGreen))
+                    .frame(height: 72)
+            } else {
+                VStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 28, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(palette.color(.accentOrange))
+                    Text("\(lowCount)")
+                        .font(.title.weight(.bold))
+                        .foregroundStyle(palette.color(.textPrimary))
+                }
+                .frame(height: 72)
+            }
+
+            Text(inRange ? "\(sanitizerLabel) in range" : "Low \(sanitizerLabel.lowercased())")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.color(.textPrimary))
+
+            Text(
+                inRange
+                    ? "All readings in range \(summaryPeriodPhrase)."
+                    : "\(lowCount) time\(lowCount == 1 ? "" : "s") \(summaryPeriodPhrase) below recommended range."
+            )
+            .font(.caption)
+            .foregroundStyle(palette.color(.textSecondary))
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
+        .appCard(palette: palette, radius: AppSpacing.cardRadius, padding: 16)
+    }
+
+    private var chemistryTipBanner: some View {
+        Button {
+            presentedHelp = .ph(.overview)
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "lightbulb")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(palette.color(.accentBlue))
+                    .frame(width: 24)
+
+                Text(tipBannerText)
+                    .font(.caption)
+                    .foregroundStyle(palette.color(.textPrimary))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.color(.textTertiary))
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
+                    .fill(palette.color(.tagBlueFill))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var tipBannerText: AttributedString {
+        var tip = AttributedString("Tip ")
+        tip.font = .caption.weight(.semibold)
+        var body = AttributedString("Keep pH between 7.2 and 7.8 for best sanitizer effectiveness.")
+        body.font = .caption
+        return tip + body
     }
 
     private var periodControls: some View {
@@ -646,37 +688,6 @@ struct ChartsScreenView: View {
         } else {
             sevenDayWeekStart = shifted
         }
-    }
-
-    private var toggles: some View {
-        HStack(spacing: 10) {
-            togglePill(sanitizerLabel, on: $showSanitizer, color: palette.color(.accentBlue))
-            togglePill("pH", on: $showPH, color: palette.color(.accentGreen))
-            togglePill("Users", on: $showUsers, color: palette.color(.accentOrange))
-        }
-    }
-
-    private func togglePill(_ title: String, on: Binding<Bool>, color: Color) -> some View {
-        Button {
-            on.wrappedValue.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: on.wrappedValue ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(on.wrappedValue ? color : palette.color(.separator))
-                Text(title)
-                    .font(.caption.weight(.semibold))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(palette.color(.surfaceCard))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(on.wrappedValue ? color : palette.color(.separator), lineWidth: 2)
-            )
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(palette.color(.textPrimary))
     }
 
     private var sanitizerCompactChart: some View {
@@ -856,35 +867,6 @@ struct ChartsScreenView: View {
         }
     }
 
-    private var guideSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.control) {
-            if showSanitizer {
-                chartsGuideCard(
-                    title: "\(sanitizerLabel) Guide",
-                    symbol: "drop.fill",
-                    color: palette.color(.accentBlue),
-                    bullets: sanitizerGuideBullets
-                )
-            }
-            if showPH {
-                chartsGuideCard(
-                    title: "pH Guide",
-                    symbol: "testtube.2",
-                    color: palette.color(.accentGreen),
-                    bullets: phGuideBullets
-                )
-            }
-            if showUsers {
-                chartsGuideCard(
-                    title: "Usage Guide",
-                    symbol: "person.2.fill",
-                    color: palette.color(.accentOrange),
-                    bullets: usageGuideBullets
-                )
-            }
-        }
-    }
-
     private var sanitizerGuideBullets: [String] {
         if isBromine {
             return [
@@ -917,6 +899,29 @@ struct ChartsScreenView: View {
             "Higher usage may require more frequent chemical adjustments.",
             "Test water quality after heavy use sessions.",
         ]
+    }
+
+    private var guideSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.control) {
+            chartsGuideCard(
+                title: "\(sanitizerLabel) Guide",
+                symbol: "drop.fill",
+                color: palette.color(.accentBlue),
+                bullets: sanitizerGuideBullets
+            )
+            chartsGuideCard(
+                title: "pH Guide",
+                symbol: "testtube.2",
+                color: palette.color(.accentGreen),
+                bullets: phGuideBullets
+            )
+            chartsGuideCard(
+                title: "Usage Guide",
+                symbol: "person.2.fill",
+                color: palette.color(.accentOrange),
+                bullets: usageGuideBullets
+            )
+        }
     }
 
     private func chartsGuideCard(
@@ -966,6 +971,32 @@ struct ChartsScreenView: View {
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
         return f.date(from: ymd)
+    }
+}
+
+// MARK: - Summary ring
+
+private struct ChartsSummaryRing: View {
+    let progress: Double
+    let color: Color
+    let trackColor: Color
+    let label: String
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(trackColor, lineWidth: 8)
+            Circle()
+                .trim(from: 0, to: min(max(progress, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text(label)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.primary)
+        }
+        .frame(width: 72, height: 72)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
     }
 }
 
