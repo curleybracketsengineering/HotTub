@@ -191,9 +191,7 @@ struct WeeklyLogFormView: View {
                     AppFormNotesField(text: $notes)
                 }
             }
-            .padding(.horizontal, AppSpacing.screenHorizontal)
-            .padding(.top, AppSpacing.screenTop)
-            .padding(.bottom, AppSpacing.screenBottom)
+            .appScrollScreenPadding()
         }
         .scrollDismissesKeyboard(.interactively)
         .appGroupedScreenBackground(palette)

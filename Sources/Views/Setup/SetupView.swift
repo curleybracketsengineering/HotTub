@@ -36,6 +36,8 @@ private struct SetupSettingsForm: View {
     @Environment(\.appPalette) private var palette
 
     @State private var showImporter = false
+    @State private var showBackupPicker = false
+    @State private var backupFiles: [URL] = []
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var showAlert = false
@@ -47,9 +49,7 @@ private struct SetupSettingsForm: View {
                 dataSection
                 legalSection
             }
-            .padding(.horizontal, AppSpacing.screenHorizontal)
-            .padding(.top, AppSpacing.screenTop)
-            .padding(.bottom, AppSpacing.screenBottom)
+            .appScrollScreenPadding()
         }
         .scrollDismissesKeyboard(.interactively)
         .fileImporter(
@@ -58,6 +58,19 @@ private struct SetupSettingsForm: View {
             allowsMultipleSelection: false
         ) { result in
             importCSV(from: result)
+        }
+        .sheet(isPresented: $showBackupPicker) {
+            BackupCSVPickerSheet(
+                files: backupFiles,
+                onSelect: { url in
+                    showBackupPicker = false
+                    importCSVFile(at: url)
+                },
+                onChooseFile: {
+                    showBackupPicker = false
+                    showImporter = true
+                }
+            )
         }
         .alert(alertTitle, isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
@@ -130,7 +143,7 @@ private struct SetupSettingsForm: View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             AppSectionHeader(
                 title: "Data",
-                subtitle: "Backups save automatically to the Files app, or import log records from another file"
+                subtitle: "Save backups or import records from the app’s Backups folder or another file"
             )
 
             VStack(spacing: 0) {
@@ -147,7 +160,7 @@ private struct SetupSettingsForm: View {
                     label: "Import records",
                     systemImage: "square.and.arrow.down"
                 ) {
-                    showImporter = true
+                    presentBackupPicker()
                 }
             }
             .appCard(palette: palette, padding: 0)
@@ -180,10 +193,19 @@ private struct SetupSettingsForm: View {
             )
             presentAlert(
                 title: "Backup saved",
-                message: "Saved as \(url.lastPathComponent) in Files → On My iPhone → Hot Tub Buddy → Backups."
+                message: "Saved as \(url.lastPathComponent). Use Import records to load it from Backups."
             )
         } catch {
             presentAlert(title: "Backup failed", message: error.localizedDescription)
+        }
+    }
+
+    private func presentBackupPicker() {
+        do {
+            backupFiles = try CSVBackupFileWriter.listBackupCSVFiles()
+            showBackupPicker = true
+        } catch {
+            presentAlert(title: "Import failed", message: error.localizedDescription)
         }
     }
 
@@ -194,20 +216,29 @@ private struct SetupSettingsForm: View {
             presentAlert(title: "Import failed", message: error.localizedDescription)
         case .success(let urls):
             guard let url = urls.first else { return }
-            guard url.startAccessingSecurityScopedResource() else {
-                presentAlert(title: "Import failed", message: HotTubCSVError.unreadable.errorDescription ?? "Could not open the file.")
-                return
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
+            importCSVFile(at: url, needsSecurityScope: true)
+        }
+    }
 
-            do {
-                let data = try Data(contentsOf: url)
-                let text = String(decoding: data, as: UTF8.self)
-                let importResult = try HotTubCSVService.importCSV(text, in: modelContext)
-                presentAlert(title: "Import complete", message: importResult.summary)
-            } catch {
-                presentAlert(title: "Import failed", message: error.localizedDescription)
+    private func importCSVFile(at url: URL, needsSecurityScope: Bool = false) {
+        let accessGranted = needsSecurityScope ? url.startAccessingSecurityScopedResource() : true
+        guard accessGranted else {
+            presentAlert(title: "Import failed", message: HotTubCSVError.unreadable.errorDescription ?? "Could not open the file.")
+            return
+        }
+        defer {
+            if needsSecurityScope {
+                url.stopAccessingSecurityScopedResource()
             }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let text = String(decoding: data, as: UTF8.self)
+            let importResult = try HotTubCSVService.importCSV(text, in: modelContext)
+            presentAlert(title: "Import complete", message: importResult.summary)
+        } catch {
+            presentAlert(title: "Import failed", message: error.localizedDescription)
         }
     }
 
@@ -215,6 +246,63 @@ private struct SetupSettingsForm: View {
         alertTitle = title
         alertMessage = message
         showAlert = true
+    }
+}
+
+private struct BackupCSVPickerSheet: View {
+    let files: [URL]
+    let onSelect: (URL) -> Void
+    let onChooseFile: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appPalette) private var palette
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if files.isEmpty {
+                    ContentUnavailableView(
+                        "No backups yet",
+                        systemImage: "doc",
+                        description: Text("Save a CSV backup first, or choose a file from elsewhere.")
+                    )
+                } else {
+                    List(files, id: \.path) { url in
+                        Button {
+                            onSelect(url)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(url.lastPathComponent)
+                                    .font(.body)
+                                    .foregroundStyle(palette.color(.textPrimary))
+                                if let date = modifiedDate(for: url) {
+                                    Text(date, style: .date)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Import records")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Choose another file…") {
+                        onChooseFile()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
+    private func modifiedDate(for url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 }
 

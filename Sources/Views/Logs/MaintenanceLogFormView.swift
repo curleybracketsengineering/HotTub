@@ -49,7 +49,7 @@ struct MaintenanceLogFormView: View {
                 Toggle("Water change", isOn: $waterChange)
                 Toggle("Filter changed", isOn: $filterChanged)
             } header: {
-                Text("Maintenance")
+                Text("Service")
             }
 
             Section {
@@ -65,7 +65,7 @@ struct MaintenanceLogFormView: View {
         }
         .scrollContentBackground(.hidden)
         .background(palette.color(.backgroundSecondary))
-        .navigationTitle(existing == nil ? "Maintenance" : "Edit maintenance")
+        .navigationTitle(existing == nil ? "Service" : "Edit service")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {

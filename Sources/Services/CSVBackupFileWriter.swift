@@ -28,4 +28,21 @@ enum CSVBackupFileWriter {
         try data.write(to: url, options: .atomic)
         return url
     }
+
+    /// CSV files in the app’s Backups folder, newest first.
+    static func listBackupCSVFiles() throws -> [URL] {
+        let directory = try backupsDirectory()
+        let urls = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        return urls
+            .filter { $0.pathExtension.lowercased() == "csv" }
+            .sorted { lhs, rhs in
+                let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return l > r
+            }
+    }
 }

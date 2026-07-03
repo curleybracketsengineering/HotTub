@@ -45,7 +45,7 @@ enum DashboardActivity: Identifiable {
         switch self {
         case .daily: return "Daily Log"
         case .weekly: return "Weekly Check"
-        case .maintenance(let x): return x.action.isEmpty ? "Maintenance" : x.action
+        case .maintenance(let x): return x.action.isEmpty ? "Service" : x.action
         case .usage: return "Hot Tub Usage"
         }
     }
@@ -55,6 +55,15 @@ enum DashboardActivity: Identifiable {
         case .daily, .weekly: return .accentBlue
         case .maintenance: return .accentOrange
         case .usage: return .accentGreen
+        }
+    }
+
+    var historyRow: HistoryRow {
+        switch self {
+        case .daily(let log): return .daily(log)
+        case .weekly(let log): return .weekly(log)
+        case .maintenance(let log): return .maintenance(log)
+        case .usage(let log): return .usage(log)
         }
     }
 }
@@ -130,5 +139,11 @@ final class DashboardViewModel: ObservableObject {
     func phOutOfRange(_ ph: Double?) -> Bool {
         guard let ph else { return false }
         return ph < 7.2 || ph > 7.8
+    }
+
+    /// True when the latest daily log is more than 24 hours old.
+    var readingsAreStale: Bool {
+        guard let log = latestDailyLog else { return false }
+        return Date().timeIntervalSince(log.loggedAt) > 24 * 60 * 60
     }
 }

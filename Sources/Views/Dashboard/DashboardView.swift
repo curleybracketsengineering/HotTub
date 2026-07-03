@@ -19,9 +19,7 @@ struct DashboardView: View {
                 quickActions
                 recentActivity
             }
-            .padding(.horizontal, AppSpacing.screenHorizontal)
-            .padding(.top, AppSpacing.screenTop)
-            .padding(.bottom, AppSpacing.screenBottom)
+            .appScrollScreenPadding()
         }
         .appGroupedScreenBackground(palette)
         .navigationTitle("Dashboard")
@@ -34,13 +32,8 @@ struct DashboardView: View {
     private var statusCard: some View {
         let log = viewModel.latestDailyLog
         let hasData = log != nil
-        let gradient = LinearGradient(
-            colors: hasData
-                ? [palette.color(.accentBlue), palette.color(.accentIndigo).opacity(0.92)]
-                : [palette.color(.heroEmptyStart), palette.color(.heroEmptyEnd)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        let isStale = viewModel.readingsAreStale
+        let gradient = statusCardGradient(hasData: hasData, isStale: isStale)
 
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -48,83 +41,154 @@ struct DashboardView: View {
                     .font(.title2)
                     .foregroundStyle(palette.color(.onAccent))
                     .padding(10)
-                    .background(Color.white.opacity(0.2))
+                    .background(Color.white.opacity(isStale ? 0.15 : 0.2))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 Spacer()
-                Text(
-                    log.map { "Last checked: \(formatShortDate($0.loggedAt))" } ?? "No records yet"
-                )
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(palette.color(.onAccent))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.2))
-                .clipShape(Capsule())
-            }
 
-            HStack(alignment: .center, spacing: 8) {
-                Text(hasData ? "Latest readings" : "Your hot tub")
-                    .font(.body)
-                    .foregroundStyle(palette.color(.onAccent).opacity(0.85))
-
-                Spacer(minLength: 0)
-
-                if hasData {
-                    AppInfoButton(
-                        message: "Typical ranges are for reference only. Test your water and follow product labels before adding chemicals.",
-                        accessibilityLabel: "About typical ranges",
-                        foreground: palette.color(.onAccent).opacity(0.75)
+                if !isStale {
+                    Text(
+                        log.map { "Last checked: \(formatShortDate($0.loggedAt))" } ?? "No records yet"
                     )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.color(.onAccent))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.2))
+                    .clipShape(Capsule())
                 }
             }
 
-            Text(
-                log.map {
-                    viewModel.statusSummary(ph: $0.ph, sanitizer: $0.primarySanitizerPpm)
-                } ?? "Ready to start?"
-            )
-            .font(.system(size: 28, weight: .heavy))
-            .foregroundStyle(palette.color(.onAccent))
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 28) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(viewModel.isBromine ? "Bromine" : "Chlorine")
-                        .font(.caption)
-                        .foregroundStyle(palette.color(.onAccent).opacity(0.65))
-                    HStack(spacing: 6) {
-                        Text(sanitizerDisplay(log))
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(palette.color(.onAccent))
-                        if let log, viewModel.sanitizerOutOfRange(log.primarySanitizerPpm) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(palette.color(.accentYellow))
-                        }
-                    }
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("pH Level")
-                        .font(.caption)
-                        .foregroundStyle(palette.color(.onAccent).opacity(0.65))
-                    HStack(spacing: 6) {
-                        Text(log?.ph.map { String(format: "%.1f", $0) } ?? "--")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(palette.color(.onAccent))
-                        if let log, viewModel.phOutOfRange(log.ph) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(palette.color(.accentYellow))
-                        }
-                    }
-                }
+            if isStale {
+                staleStatusContent(log: log)
+            } else {
+                freshStatusContent(log: log, hasData: hasData)
             }
         }
         .padding(20)
         .background(gradient)
         .clipShape(RoundedRectangle(cornerRadius: AppSpacing.largeCardRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+        .shadow(color: .black.opacity(isStale ? 0.04 : 0.06), radius: 8, y: 4)
+        .animation(.spring(response: 0.35), value: isStale)
+    }
+
+    private func statusCardGradient(hasData: Bool, isStale: Bool) -> LinearGradient {
+        let colors: [Color]
+        if !hasData {
+            colors = [palette.color(.heroEmptyStart), palette.color(.heroEmptyEnd)]
+        } else if isStale {
+            colors = [
+                palette.color(.heroEmptyStart),
+                palette.color(.heroEmptyEnd).opacity(0.88),
+            ]
+        } else {
+            colors = [
+                palette.color(.accentBlue),
+                palette.color(.accentIndigo).opacity(0.92),
+            ]
+        }
+        return LinearGradient(
+            colors: colors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    @ViewBuilder
+    private func freshStatusContent(log: HotTubDailyLog?, hasData: Bool) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(hasData ? "Latest readings" : "Your hot tub")
+                .font(.body)
+                .foregroundStyle(palette.color(.onAccent).opacity(0.85))
+
+            Spacer(minLength: 0)
+
+            if hasData {
+                AppInfoButton(
+                    message: "Typical ranges are for reference only. Test your water and follow product labels before adding chemicals.",
+                    accessibilityLabel: "About typical ranges",
+                    foreground: palette.color(.onAccent).opacity(0.75)
+                )
+            }
+        }
+
+        Text(
+            log.map {
+                viewModel.statusSummary(ph: $0.ph, sanitizer: $0.primarySanitizerPpm)
+            } ?? "Ready to start?"
+        )
+        .font(.system(size: 28, weight: .heavy))
+        .foregroundStyle(palette.color(.onAccent))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        readingsRow(log: log)
+    }
+
+    @ViewBuilder
+    private func staleStatusContent(log: HotTubDailyLog?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Check water today")
+                .font(.system(size: 28, weight: .heavy))
+                .foregroundStyle(palette.color(.onAccent))
+
+            if let log {
+                Text("Last checked \(formatShortDate(log.loggedAt))")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(palette.color(.onAccent).opacity(0.75))
+            }
+        }
+
+        readingsRow(log: log)
+            .opacity(0.72)
+
+        NavigationLink {
+            DailyLogFormView()
+        } label: {
+            Text("Log today's readings")
+                .font(.headline)
+                .foregroundStyle(palette.color(.accentBlue))
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 50)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func readingsRow(log: HotTubDailyLog?) -> some View {
+        HStack(spacing: 28) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.isBromine ? "Bromine" : "Chlorine")
+                    .font(.caption)
+                    .foregroundStyle(palette.color(.onAccent).opacity(0.65))
+                HStack(spacing: 6) {
+                    Text(sanitizerDisplay(log))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(palette.color(.onAccent))
+                    if let log, viewModel.sanitizerOutOfRange(log.primarySanitizerPpm) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(palette.color(.accentYellow))
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("pH Level")
+                    .font(.caption)
+                    .foregroundStyle(palette.color(.onAccent).opacity(0.65))
+                HStack(spacing: 6) {
+                    Text(log?.ph.map { String(format: "%.1f", $0) } ?? "--")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(palette.color(.onAccent))
+                    if let log, viewModel.phOutOfRange(log.ph) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .foregroundStyle(palette.color(.accentYellow))
+                    }
+                }
+            }
+        }
     }
 
     private func sanitizerDisplay(_ log: HotTubDailyLog?) -> String {
@@ -141,7 +205,7 @@ struct DashboardView: View {
                     ActivityHubView()
                 } label: {
                     quickActionTile(
-                        title: "Activity",
+                        title: "Log",
                         systemImage: "list.clipboard",
                         fillToken: .tagBlueFill,
                         iconToken: .accentBlue
@@ -215,33 +279,8 @@ struct DashboardView: View {
         NavigationLink {
             activityDetail(item)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: iconName(item))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(palette.color(item.accentToken))
-                    .frame(width: 40, height: 40)
-                    .background(palette.color(item.accentToken).opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(palette.color(.textPrimary))
-                    HStack(spacing: 12) {
-                        Label(formatShortDate(moment(for: item)), systemImage: "calendar")
-                        Label(timeHM(moment(for: item)), systemImage: "clock")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(palette.color(.textSecondary))
-                    .labelStyle(.titleAndIcon)
-                }
-
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.color(.textTertiary))
-            }
-            .appCard(palette: palette, padding: 12)
+            ActivityRowView(row: item.historyRow, isBromine: viewModel.isBromine, palette: palette)
+                .appCard(palette: palette, padding: 12)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -267,34 +306,9 @@ struct DashboardView: View {
         }
     }
 
-    private func iconName(_ item: DashboardActivity) -> String {
-        switch item {
-        case .daily: return "drop.fill"
-        case .weekly: return "checkmark.calendar"
-        case .maintenance: return "wrench.fill"
-        case .usage: return "timer"
-        }
-    }
-
-    private func moment(for item: DashboardActivity) -> Date {
-        switch item {
-        case .daily(let x): return x.loggedAt
-        case .weekly(let x): return x.loggedAt
-        case .maintenance(let x): return x.loggedAt
-        case .usage(let x): return x.loggedAt
-        }
-    }
-
     private func formatShortDate(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "dd MMM yy"
-        return f.string(from: date)
-    }
-
-    private func timeHM(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "HH:mm"
         return f.string(from: date)
     }
 

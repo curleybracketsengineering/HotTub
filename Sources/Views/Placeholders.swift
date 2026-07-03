@@ -22,27 +22,25 @@ struct ActivityHubView: View {
                 )
 
                 LazyVGrid(columns: columns, spacing: AppSpacing.control) {
-                    ForEach(ActivityEntry.allCases) { entry in
+                    ForEach(ActivityLogKind.allCases) { kind in
                         NavigationLink {
-                            entry.destination
+                            kind.formDestination
                         } label: {
                             entryTile(
-                                title: entry.title,
-                                systemImage: entry.systemImage,
-                                fillToken: entry.fillToken,
-                                iconToken: entry.iconToken
+                                title: kind.hubTitle,
+                                systemImage: kind.systemImage,
+                                fillToken: kind.fillToken,
+                                iconToken: kind.iconToken
                             )
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
-            .padding(.horizontal, AppSpacing.screenHorizontal)
-            .padding(.top, AppSpacing.screenTop)
-            .padding(.bottom, AppSpacing.screenBottom)
+            .appScrollScreenPadding()
         }
         .appGroupedScreenBackground(palette)
-        .navigationTitle("Activity")
+        .navigationTitle("Log")
         .navigationBarTitleDisplayMode(.large)
     }
 
@@ -74,61 +72,13 @@ struct ActivityHubView: View {
     }
 }
 
-private enum ActivityEntry: String, CaseIterable, Identifiable {
-    case daily
-    case weekly
-    case maintenance
-    case usage
-
-    var id: String { rawValue }
-
-    var title: String {
+private extension ActivityLogKind {
+    var hubTitle: String {
         switch self {
         case .daily: "Daily log"
         case .weekly: "Weekly check"
-        case .maintenance: "Maintenance"
+        case .maintenance: "Service"
         case .usage: "Usage"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .daily: "drop.fill"
-        case .weekly: "checkmark.calendar"
-        case .maintenance: "wrench.fill"
-        case .usage: "timer"
-        }
-    }
-
-    var fillToken: PaletteToken {
-        switch self {
-        case .daily: .tagBlueFill
-        case .weekly: .tagGreenFill
-        case .maintenance: .tagOrangeFill
-        case .usage: .tagPinkFill
-        }
-    }
-
-    var iconToken: PaletteToken {
-        switch self {
-        case .daily: .accentBlue
-        case .weekly: .accentGreen
-        case .maintenance: .accentOrange
-        case .usage: .accentPink
-        }
-    }
-
-    @ViewBuilder
-    var destination: some View {
-        switch self {
-        case .daily:
-            DailyLogFormView()
-        case .weekly:
-            WeeklyLogFormView()
-        case .maintenance:
-            MaintenanceLogFormView()
-        case .usage:
-            UsageLogFormView()
         }
     }
 }

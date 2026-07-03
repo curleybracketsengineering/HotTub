@@ -270,9 +270,7 @@ struct ChartsScreenView: View {
                     guideSection
                 }
             }
-            .padding(.horizontal, AppSpacing.screenHorizontal)
-            .padding(.top, AppSpacing.screenTop)
-            .padding(.bottom, AppSpacing.screenBottom)
+            .appScrollScreenPadding()
         }
         .appGroupedScreenBackground(palette)
         .navigationTitle("Charts")

@@ -26,7 +26,7 @@ struct HotTubCSVImportResult {
             var detail: [String] = []
             if dailyAdded > 0 { detail.append("\(dailyAdded) daily") }
             if weeklyAdded > 0 { detail.append("\(weeklyAdded) weekly") }
-            if maintenanceAdded > 0 { detail.append("\(maintenanceAdded) maintenance") }
+            if maintenanceAdded > 0 { detail.append("\(maintenanceAdded) service") }
             if usageAdded > 0 { detail.append("\(usageAdded) usage") }
             parts.append("Added \(detail.joined(separator: ", "))")
         }

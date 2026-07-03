@@ -11,6 +11,8 @@ enum AppSpacing {
     static let screenHorizontal: CGFloat = 20
     static let screenTop: CGFloat = 16
     static let screenBottom: CGFloat = 32
+    /// Extra bottom inset so scroll content clears the tab bar and stays tappable.
+    static let scrollBottom: CGFloat = 88
     static let section: CGFloat = 24
     static let stack: CGFloat = 16
     static let control: CGFloat = 12
@@ -22,6 +24,13 @@ enum AppSpacing {
 // MARK: - Background
 
 extension View {
+    /// Standard padding for main `ScrollView` content (clears tab bar).
+    func appScrollScreenPadding() -> some View {
+        padding(.horizontal, AppSpacing.screenHorizontal)
+            .padding(.top, AppSpacing.screenTop)
+            .padding(.bottom, AppSpacing.scrollBottom)
+    }
+
     func appGroupedScreenBackground(_ palette: AppPalette) -> some View {
         background(palette.color(.backgroundSecondary).ignoresSafeArea())
     }
@@ -115,19 +124,19 @@ struct AppFilterChip: View {
             }
         } label: {
             Text(title)
-                .font(.caption.weight(.medium))
+                .font(.caption.weight(isOn ? .semibold : .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .frame(width: Self.uniformWidth)
                 .frame(minHeight: AppSpacing.minTap)
-                .background(isOn ? palette.color(.tagBlueFill) : palette.color(.surfaceCard))
+                .background(isOn ? palette.color(.tagBlueFill) : Color.clear)
                 .foregroundStyle(isOn ? palette.color(.accentBlue) : palette.color(.textSecondary))
                 .clipShape(Capsule())
                 .overlay {
                     Capsule()
                         .strokeBorder(
-                            isOn ? palette.color(.accentBlue).opacity(0.4) : palette.color(.separator).opacity(0.5),
-                            lineWidth: 1
+                            isOn ? palette.color(.accentBlue) : palette.color(.separator),
+                            lineWidth: isOn ? 2 : 1
                         )
                 }
         }
