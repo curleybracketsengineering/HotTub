@@ -47,7 +47,7 @@ private struct SetupSettingsForm: View {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 hotTubSection
                 dataSection
-                legalSection
+                safetySection
             }
             .appScrollScreenPadding()
         }
@@ -167,14 +167,14 @@ private struct SetupSettingsForm: View {
         }
     }
 
-    private var legalSection: some View {
+    private var safetySection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
-            AppSectionHeader(
-                title: "Legal",
-                subtitle: "Important information about using this app"
-            )
+            AppSectionHeader(title: "Safety information")
 
-            SetupDisclaimerView()
+            SetupDisclaimerView(
+                isBromine: settings.sanitizerType == "bromine",
+                isMetric: settings.measurementSystem == "metric"
+            )
         }
     }
 

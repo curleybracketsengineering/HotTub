@@ -6,156 +6,46 @@
 import SwiftUI
 
 struct SetupDisclaimerView: View {
+    let isBromine: Bool
+    let isMetric: Bool
+
     @Environment(\.appPalette) private var palette
-    @AppStorage(DisclaimerAcceptance.storageKey) private var acceptedDisclaimerVersion = ""
-    @State private var showFullDisclaimer = false
+    @State private var showDisclaimer = false
+    @State private var showChemicalSafety = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.stack) {
-            header
-            introParagraph
-            sectionsCard
-            warningBanner
-            viewFullDisclaimerButton
+        VStack(spacing: 0) {
+            AppSettingsNavigationRow(label: "Important safety information") {
+                showDisclaimer = true
+            }
+
+            AppSettingsDivider()
+
+            AppSettingsNavigationRow(label: "Chemical safety") {
+                showChemicalSafety = true
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .sheet(isPresented: $showFullDisclaimer) {
+        .appCard(palette: palette, padding: 0)
+        .sheet(isPresented: $showDisclaimer) {
             DisclaimerSheetView()
         }
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .font(.title2)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(
-                    palette.color(.statusWarningText),
-                    palette.color(.accentYellow)
-                )
-
-            Text("Important Disclaimer")
-                .font(.title2.bold())
-                .foregroundStyle(palette.color(.textPrimary))
-
-            Text(versionLine)
-                .font(.subheadline)
-                .foregroundStyle(palette.color(.textSecondary))
-        }
-    }
-
-    private var versionLine: String {
-        if DisclaimerAcceptance.isAccepted(acceptedDisclaimerVersion) {
-            "Accepted version \(DisclaimerAcceptance.currentVersion) • Last updated \(DisclaimerAcceptance.lastUpdated)"
-        } else {
-            "Version \(DisclaimerAcceptance.currentVersion) • Last updated \(DisclaimerAcceptance.lastUpdated)"
-        }
-    }
-
-    private var introParagraph: some View {
-        Text(
-            "This is a **free, non-commercial informational app** Provided by Curley Brackets Engineering Ltd for tracking and reference purposes only. It does not provide professional advice and does not replace manufacturer instructions or professional services."
-        )
-        .font(.subheadline)
-        .foregroundStyle(palette.color(.textPrimary))
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var sectionsCard: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.stack) {
-            disclaimerSection(title: "Water Chemistry") {
-                Text(
-                    "This app is a **logging and tracking tool** for recording your hot tub maintenance. Any water chemistry values, ranges, or guidance shown are **for reference only**. The app does not calculate or recommend chemical dosages. Always follow your hot tub or spa manufacturer's guidance and the instructions on chemical products. Users are responsible for **testing their own water** and making their own decisions about chemical treatment."
-                )
-            }
-
-            disclaimerSection(title: "Safety") {
-                Text(
-                    "Pool and spa chemicals can be hazardous if handled incorrectly. Always read and follow product labels, safety warnings, and safety data sheets."
-                )
-            }
-
-            disclaimerSection(title: "Local Laws") {
-                Text(
-                    "Laws, standards, and recommended practices may vary by country or region. Users are responsible for ensuring compliance with **local regulations** and manufacturer guidance."
-                )
-            }
-
-            disclaimerSection(title: "No Warranty / Limitation of Liability") {
-                Text(
-                    "This app is provided **\"as is\"**, without warranties of any kind. To the fullest extent permitted by applicable law, Curley Brackets Engineering Ltd accepts **no liability for loss, damage, or injury** arising from use of this app. Use of the app is entirely **at the user's own risk**."
-                )
-            }
-        }
-        .appCard(palette: palette, radius: AppSpacing.cardRadius)
-    }
-
-    private var warningBanner: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.subheadline)
-                .foregroundStyle(palette.color(.statusWarningText))
-
-            Text("Always test your water before adding chemicals and never exceed manufacturer dosing guidelines.")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(palette.color(.statusWarningText))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.color(.statusWarningFill))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
-                .strokeBorder(palette.color(.statusWarningBorder), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous))
-    }
-
-    private var viewFullDisclaimerButton: some View {
-        Button {
-            showFullDisclaimer = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .font(.body.weight(.semibold))
-                Text("View Full Disclaimer")
-                    .font(.body.weight(.semibold))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(palette.color(.textPrimary))
-        .background(palette.color(.surfaceCard))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
-                .strokeBorder(palette.color(.separator).opacity(0.5), lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous))
-    }
-
-    private func disclaimerSection<Content: View>(
-        title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(palette.color(.textPrimary))
-
-            content()
-                .font(.subheadline)
-                .foregroundStyle(palette.color(.textPrimary))
-                .fixedSize(horizontal: false, vertical: true)
+        .sheet(isPresented: $showChemicalSafety) {
+            HelpSheetView(
+                request: HelpSheetRequest(topic: .chemicalsAdded),
+                isBromine: isBromine,
+                isMetric: isMetric
+            )
         }
     }
 }
 
 #Preview {
     ScrollView {
-        SetupDisclaimerView()
-            .padding()
+        VStack(alignment: .leading, spacing: AppSpacing.control) {
+            AppSectionHeader(title: "Safety information")
+            SetupDisclaimerView(isBromine: false, isMetric: true)
+        }
+        .appScrollScreenPadding()
     }
     .appPalette(.light)
 }

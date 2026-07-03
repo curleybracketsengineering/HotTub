@@ -226,6 +226,31 @@ struct AppSettingsValueRow: View {
     }
 }
 
+struct AppSettingsNavigationRow: View {
+    let label: String
+    let action: () -> Void
+
+    @Environment(\.appPalette) private var palette
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(label)
+                    .font(.body)
+                    .foregroundStyle(palette.color(.textPrimary))
+                Spacer(minLength: 16)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.color(.textTertiary))
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: AppSpacing.minTap)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Info popover
 
 struct AppInfoButton: View {
