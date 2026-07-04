@@ -38,7 +38,7 @@ private enum ChartRange: String, CaseIterable {
 struct ChartsScreenView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.usePadLayout) private var usePadLayout
 
     @Query(sort: \HotTubDailyLog.loggedAt, order: .forward) private var allDaily: [HotTubDailyLog]
     @Query(sort: \UsageLogEntry.loggedAt, order: .forward) private var allUsage: [UsageLogEntry]
@@ -89,7 +89,7 @@ struct ChartsScreenView: View {
     }
 
     private var availableChartRanges: [ChartRange] {
-        horizontalSizeClass == .regular ? ChartRange.allCases : [.last7Days, .month]
+        usePadLayout ? ChartRange.allCases : [.last7Days, .month]
     }
 
     private var threeMonthsStart: Date {
@@ -433,35 +433,19 @@ struct ChartsScreenView: View {
             && (summary.phReadingCount > 0 || summary.sanitizerReadingCount > 0)
     }
 
+    private var chemistryChartHeight: CGFloat {
+        usePadLayout ? PadContentLayout.chemistryChartHeightPad : PadContentLayout.chemistryChartHeightPhone
+    }
+
+    private var usersChartHeight: CGFloat {
+        usePadLayout ? PadContentLayout.usersChartHeightPad : PadContentLayout.usersChartHeightPhone
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.section) {
-                periodControls
-
-                if hasData, showsChemistrySummary, let summary = chemistryPeriodSummary {
-                    chemistrySummarySection(summary)
-                }
-
-                if !hasData {
-                    AppEmptyState(
-                        symbol: "calendar",
-                        title: emptyStatePeriodTitle,
-                        message: "Add logs to see charts"
-                    )
-                } else {
-                    VStack(alignment: .leading, spacing: AppSpacing.control) {
-                        sanitizerCompactChart
-                        phCompactChart
-                        if hasVisibleChemicalSeries {
-                            chemistryStatusLegend
-                        }
-                    }
-                    usersChart
-                }
-
-                guideSection
-            }
-            .appScrollScreenPadding()
+            chartsScrollContent
+                .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+                .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .appGroupedScreenBackground(palette)
         .navigationTitle("Charts")
@@ -470,10 +454,113 @@ struct ChartsScreenView: View {
             HotTubModelContainer.seedIfNeeded(in: modelContext)
             clampChartRangeIfNeeded()
         }
-        .onChange(of: horizontalSizeClass) { _, _ in
+        .onChange(of: usePadLayout) { _, _ in
             clampChartRangeIfNeeded()
         }
         .helpSheet(presentedHelp: $presentedHelp, isBromine: isBromine, isMetric: isMetric)
+    }
+
+    @ViewBuilder
+    private var chartsScrollContent: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.section) {
+            periodControls
+
+            if hasData, showsChemistrySummary, let summary = chemistryPeriodSummary {
+                chemistrySummarySection(summary)
+            }
+
+            if !hasData {
+                AppEmptyState(
+                    symbol: "calendar",
+                    title: emptyStatePeriodTitle,
+                    message: "Add logs to see charts"
+                )
+            } else {
+                chemistryChartsSection
+                usersChart
+            }
+
+            guideSection
+        }
+    }
+
+    @ViewBuilder
+    private var chemistryChartsSection: some View {
+        if usePadLayout {
+            VStack(alignment: .leading, spacing: AppSpacing.control) {
+                HStack(alignment: .top, spacing: AppSpacing.control) {
+                    sanitizerCompactChart
+                        .frame(maxWidth: .infinity)
+                    phCompactChart
+                        .frame(maxWidth: .infinity)
+                }
+                if hasVisibleChemicalSeries {
+                    chemistryStatusLegend
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: AppSpacing.control) {
+                sanitizerCompactChart
+                phCompactChart
+                if hasVisibleChemicalSeries {
+                    chemistryStatusLegend
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var guideSection: some View {
+        if usePadLayout {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: AppSpacing.control),
+                    GridItem(.flexible(), spacing: AppSpacing.control),
+                    GridItem(.flexible(), spacing: AppSpacing.control),
+                ],
+                spacing: AppSpacing.control
+            ) {
+                chartsGuideCard(
+                    title: "\(sanitizerLabel) Guide",
+                    symbol: "drop.fill",
+                    color: palette.color(.accentBlue),
+                    bullets: sanitizerGuideBullets
+                )
+                chartsGuideCard(
+                    title: "pH Guide",
+                    symbol: "testtube.2",
+                    color: palette.color(.accentGreen),
+                    bullets: phGuideBullets
+                )
+                chartsGuideCard(
+                    title: "Usage Guide",
+                    symbol: "person.2.fill",
+                    color: palette.color(.accentOrange),
+                    bullets: usageGuideBullets
+                )
+            }
+        } else {
+            VStack(alignment: .leading, spacing: AppSpacing.control) {
+                chartsGuideCard(
+                    title: "\(sanitizerLabel) Guide",
+                    symbol: "drop.fill",
+                    color: palette.color(.accentBlue),
+                    bullets: sanitizerGuideBullets
+                )
+                chartsGuideCard(
+                    title: "pH Guide",
+                    symbol: "testtube.2",
+                    color: palette.color(.accentGreen),
+                    bullets: phGuideBullets
+                )
+                chartsGuideCard(
+                    title: "Usage Guide",
+                    symbol: "person.2.fill",
+                    color: palette.color(.accentOrange),
+                    bullets: usageGuideBullets
+                )
+            }
+        }
     }
 
     private func clampChartRangeIfNeeded() {
@@ -919,7 +1006,7 @@ struct ChartsScreenView: View {
                         chartXAxisMarks(showLabels: true, showGrid: true)
                     }
                     .chartXScale(domain: chartXDomain)
-                    .frame(height: 150)
+                    .frame(height: chemistryChartHeight)
                 }
             }
         }
@@ -967,7 +1054,7 @@ struct ChartsScreenView: View {
                     chartXAxisMarks(showLabels: true, showGrid: true)
                 }
                 .chartXScale(domain: chartXDomain)
-                .frame(height: 220)
+                .frame(height: usersChartHeight)
             }
         }
     }
@@ -1004,29 +1091,6 @@ struct ChartsScreenView: View {
             "Higher usage may require more frequent chemical adjustments.",
             "Test water quality after heavy use sessions.",
         ]
-    }
-
-    private var guideSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.control) {
-            chartsGuideCard(
-                title: "\(sanitizerLabel) Guide",
-                symbol: "drop.fill",
-                color: palette.color(.accentBlue),
-                bullets: sanitizerGuideBullets
-            )
-            chartsGuideCard(
-                title: "pH Guide",
-                symbol: "testtube.2",
-                color: palette.color(.accentGreen),
-                bullets: phGuideBullets
-            )
-            chartsGuideCard(
-                title: "Usage Guide",
-                symbol: "person.2.fill",
-                color: palette.color(.accentOrange),
-                bullets: usageGuideBullets
-            )
-        }
     }
 
     private func chartsGuideCard(

@@ -34,6 +34,7 @@ private struct SetupSettingsForm: View {
     @Bindable var settings: AppSettings
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
+    @Environment(\.usePadLayout) private var usePadLayout
 
     @State private var showImporter = false
     @State private var showBackupPicker = false
@@ -44,12 +45,15 @@ private struct SetupSettingsForm: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.section) {
-                hotTubSection
-                dataSection
-                safetySection
+            Group {
+                if usePadLayout {
+                    padSettingsContent
+                } else {
+                    phoneSettingsContent
+                }
             }
-            .appScrollScreenPadding()
+            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+            .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .scrollDismissesKeyboard(.interactively)
         .fileImporter(
@@ -76,6 +80,27 @@ private struct SetupSettingsForm: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage)
+        }
+    }
+
+    private var phoneSettingsContent: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.section) {
+            hotTubSection
+            dataSection
+            safetySection
+        }
+    }
+
+    private var padSettingsContent: some View {
+        HStack(alignment: .top, spacing: AppSpacing.section) {
+            VStack(alignment: .leading, spacing: AppSpacing.section) {
+                hotTubSection
+                dataSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            safetySection
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

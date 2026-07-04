@@ -11,6 +11,7 @@ import UIKit
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
+    @Environment(\.usePadLayout) private var usePadLayout
     @Environment(\.openURL) private var openURL
     @ObservedObject private var notificationService = ReminderNotificationService.shared
     @StateObject private var viewModel = DashboardViewModel()
@@ -22,13 +23,15 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.section) {
-                statusCard
-                actionsSection
-                recentRecords
-                remindersSection
+            Group {
+                if usePadLayout {
+                    padDashboardContent
+                } else {
+                    phoneDashboardContent
+                }
             }
-            .appScrollScreenPadding()
+            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+            .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .appGroupedScreenBackground(palette)
         .navigationTitle("Home")
@@ -85,6 +88,55 @@ struct DashboardView: View {
                 navigateToWeeklyCheck = true
             }
             notificationService.pendingDestination = nil
+        }
+    }
+
+    private var phoneDashboardContent: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.section) {
+            statusCard
+            actionsSection
+            recentRecords
+            remindersSection
+        }
+    }
+
+    private var padDashboardContent: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.section) {
+            statusCard
+            actionsSection
+
+            HStack(alignment: .top, spacing: AppSpacing.section) {
+                recentRecords
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                padRemindersColumn
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var padRemindersColumn: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.control) {
+            AppSectionHeader(title: "Reminders")
+
+            if viewModel.dueReminders.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.title2)
+                        .foregroundStyle(palette.color(.accentGreen))
+                    Text("All caught up")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.color(.textPrimary))
+                    Text("No water tests or weekly checks due right now.")
+                        .font(.caption)
+                        .foregroundStyle(palette.color(.textSecondary))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard(palette: palette)
+            } else {
+                ForEach(viewModel.dueReminders) { reminder in
+                    reminderRow(reminder)
+                }
+            }
         }
     }
 
