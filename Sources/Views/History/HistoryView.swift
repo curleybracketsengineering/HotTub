@@ -27,6 +27,7 @@ struct HistoryView: View {
     @State private var filterUsage = true
     @State private var isFilterExpanded = false
     @State private var selectedRowID: String?
+    @State private var selectedDay: Date?
     @State private var deleteTarget: HistoryRow?
     @State private var showDeleteConfirm = false
 
@@ -78,18 +79,25 @@ struct HistoryView: View {
         return sections
     }
 
+    private var selectedDaySection: HistoryDaySection? {
+        guard let selectedDay else { return nil }
+        let calendar = Calendar.current
+        return daySections.first { calendar.isDate($0.day, inSameDayAs: selectedDay) }
+    }
+
     private var usesSplitLayout: Bool {
-        usePadLayout && isTabRoot && isLandscape
+        usePadLayout && isTabRoot
+    }
+
+    /// Portrait iPad: dates in the sidebar. Landscape: full entry list.
+    private var usesDateMenuSidebar: Bool {
+        usesSplitLayout && !isLandscape
     }
 
     var body: some View {
         Group {
             if usesSplitLayout {
                 padSplitBody
-            } else if usePadLayout {
-                NavigationStack {
-                    compactBody
-                }
             } else {
                 compactBody
             }
@@ -105,6 +113,9 @@ struct HistoryView: View {
         .onChange(of: isLandscape) { _, _ in
             syncSelectionWithRows()
         }
+        .onChange(of: selectedDay) { _, _ in
+            syncRowSelectionForSelectedDay()
+        }
         .confirmationDialog("Delete this record?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 if let row = deleteTarget { delete(row) }
@@ -119,18 +130,136 @@ struct HistoryView: View {
 
     private var padSplitBody: some View {
         NavigationSplitView {
-            historySplitSidebar
-                .navigationSplitViewColumnWidth(
-                    min: PadContentLayout.historyListMinWidth,
-                    ideal: PadContentLayout.historyListIdealWidth
-                )
+            if usesDateMenuSidebar {
+                portraitDateSidebar
+                    .navigationSplitViewColumnWidth(
+                        min: PadContentLayout.historyDateMenuMinWidth,
+                        ideal: PadContentLayout.historyDateMenuIdealWidth
+                    )
+            } else {
+                historySplitSidebar
+                    .navigationSplitViewColumnWidth(
+                        min: PadContentLayout.historyListMinWidth,
+                        ideal: PadContentLayout.historyListIdealWidth
+                    )
+            }
         } detail: {
+            if usesDateMenuSidebar {
+                portraitDateDetail
+            } else if let selectedRow {
+                destination(for: selectedRow)
+            } else {
+                historyDetailPlaceholder
+            }
+        }
+    }
+
+    private var portraitDateSidebar: some View {
+        List(selection: $selectedDay) {
+            Section {
+                padFilterChips
+            }
+
+            if daySections.isEmpty {
+                Section {
+                    ContentUnavailableView {
+                        Label("No entries", systemImage: "tray")
+                    } description: {
+                        Text("Try turning on more filters, or log something from Home.")
+                    }
+                }
+            } else {
+                Section {
+                    ForEach(daySections) { section in
+                        dateSidebarRow(section)
+                            .tag(section.day)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.large)
+    }
+
+    private func dateSidebarRow(_ section: HistoryDaySection) -> some View {
+        HStack(spacing: AppSpacing.control) {
+            Text(RelativeDateFormatter.historySectionTitle(for: section.day))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.color(.textPrimary))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+
+            Text("\(section.rows.count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.color(.textSecondary))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(palette.color(.surfaceCard))
+                .clipShape(Capsule())
+        }
+    }
+
+    @ViewBuilder
+    private var portraitDateDetail: some View {
+        if let section = selectedDaySection {
+            if section.rows.isEmpty {
+                historyDetailPlaceholder
+            } else if section.rows.count == 1, let row = section.rows.first {
+                destination(for: row)
+            } else {
+                portraitMultiEntryDetail(section)
+            }
+        } else {
+            historyDetailPlaceholder
+        }
+    }
+
+    private func portraitMultiEntryDetail(_ section: HistoryDaySection) -> some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AppSpacing.control) {
+                    ForEach(section.rows) { row in
+                        portraitEntryChip(row, isSelected: row.id == selectedRowID)
+                    }
+                }
+                .padding(.horizontal, PadContentLayout.horizontalGutter)
+                .padding(.vertical, 12)
+            }
+            .background(palette.color(.backgroundSecondary))
+
             if let selectedRow {
                 destination(for: selectedRow)
             } else {
                 historyDetailPlaceholder
             }
         }
+    }
+
+    private func portraitEntryChip(_ row: HistoryRow, isSelected: Bool) -> some View {
+        Button {
+            selectedRowID = row.id
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: splitRowIcon(for: row))
+                    .font(.caption.weight(.semibold))
+                Text(row.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(RelativeDateFormatter.timeOnly(for: row.sortMoment))
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? .white.opacity(0.85) : palette.color(.textSecondary))
+            }
+            .foregroundStyle(isSelected ? .white : palette.color(.textPrimary))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isSelected ? palette.color(.accentBlue) : palette.color(.surfaceCard))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var historySplitSidebar: some View {
@@ -227,9 +356,13 @@ struct HistoryView: View {
 
     private var historyDetailPlaceholder: some View {
         ContentUnavailableView {
-            Label("Select a record", systemImage: "doc.text.magnifyingglass")
+            Label(usesDateMenuSidebar ? "Select a date" : "Select a record", systemImage: "doc.text.magnifyingglass")
         } description: {
-            Text("Choose an entry from the list to view or edit it.")
+            Text(
+                usesDateMenuSidebar
+                    ? "Choose a date from the list to view or edit its entries."
+                    : "Choose an entry from the list to view or edit it."
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(palette.color(.backgroundSecondary))
@@ -355,6 +488,23 @@ struct HistoryView: View {
         deleteTarget = nil
         if selectedRowID == deletedID {
             selectedRowID = combinedRows.first(where: { $0.id != deletedID })?.id
+            if usesDateMenuSidebar {
+                syncDaySelectionAfterDelete()
+            }
+        }
+    }
+
+    private func syncDaySelectionAfterDelete() {
+        guard let currentDay = selectedDay else { return }
+        let calendar = Calendar.current
+        if let section = daySections.first(where: { calendar.isDate($0.day, inSameDayAs: currentDay) }) {
+            if section.rows.isEmpty {
+                selectedDay = daySections.first?.day
+            } else if !section.rows.contains(where: { $0.id == selectedRowID }) {
+                selectedRowID = section.rows.first?.id
+            }
+        } else {
+            selectedDay = daySections.first?.day
         }
     }
 
@@ -367,10 +517,43 @@ struct HistoryView: View {
 
     private func syncSelectionWithRows() {
         guard usesSplitLayout else { return }
+        if usesDateMenuSidebar {
+            syncDaySelection()
+        } else {
+            syncRowSelection()
+        }
+    }
+
+    private func syncDaySelection() {
+        if daySections.isEmpty {
+            selectedDay = nil
+            selectedRowID = nil
+        } else if selectedDay == nil
+            || !daySections.contains(where: { Calendar.current.isDate($0.day, inSameDayAs: selectedDay!) })
+        {
+            selectedDay = daySections.first?.day
+        }
+        syncRowSelectionForSelectedDay()
+    }
+
+    private func syncRowSelection() {
         if combinedRows.isEmpty {
             selectedRowID = nil
         } else if selectedRowID == nil || !combinedRows.contains(where: { $0.id == selectedRowID }) {
             selectedRowID = combinedRows.first?.id
+        }
+    }
+
+    private func syncRowSelectionForSelectedDay() {
+        guard usesDateMenuSidebar else { return }
+        guard let section = selectedDaySection else {
+            selectedRowID = nil
+            return
+        }
+        if section.rows.isEmpty {
+            selectedRowID = nil
+        } else if selectedRowID == nil || !section.rows.contains(where: { $0.id == selectedRowID }) {
+            selectedRowID = section.rows.first?.id
         }
     }
 

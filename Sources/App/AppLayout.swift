@@ -71,9 +71,13 @@ enum PadContentLayout {
     static let usersChartHeightPhone: CGFloat = 220
     static let usersChartHeightPad: CGFloat = 260
 
-    /// History master–detail split column.
+    /// History master–detail split column (landscape entry list).
     static let historyListMinWidth: CGFloat = 340
     static let historyListIdealWidth: CGFloat = 400
+
+    /// History date menu — narrower sidebar for portrait split.
+    static let historyDateMenuMinWidth: CGFloat = 260
+    static let historyDateMenuIdealWidth: CGFloat = 300
 
     /// Floating pill tab bar — compact on 13″, nearly full width on 11″.
     static let tabBarOuterHorizontalPadding: CGFloat = 16
