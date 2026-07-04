@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4A0137FE2F7D72650083E219"
-               BuildableName = "HotTub Buddy.app"
-               BlueprintName = "HotTub Buddy"
+               BuildableName = "HotTub.app"
+               BlueprintName = "HotTub"
                ReferencedContainer = "container:HotTub.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4A0137FE2F7D72650083E219"
-            BuildableName = "HotTub Buddy.app"
-            BlueprintName = "HotTub Buddy"
+            BuildableName = "HotTub.app"
+            BlueprintName = "HotTub"
             ReferencedContainer = "container:HotTub.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4A0137FE2F7D72650083E219"
-            BuildableName = "HotTub Buddy.app"
-            BlueprintName = "HotTub Buddy"
+            BuildableName = "HotTub.app"
+            BlueprintName = "HotTub"
             ReferencedContainer = "container:HotTub.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

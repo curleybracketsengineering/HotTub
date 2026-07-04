@@ -1,6 +1,6 @@
 //
 //  DashboardViewModel.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Combine

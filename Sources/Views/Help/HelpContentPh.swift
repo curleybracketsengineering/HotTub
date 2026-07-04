@@ -1,6 +1,6 @@
 //
 //  HelpContentPh.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Single pH guide; `focus` controls which section opens first.
 //

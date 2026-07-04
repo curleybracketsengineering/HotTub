@@ -1,6 +1,6 @@
 //
 //  UsageLogFormView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import SwiftData

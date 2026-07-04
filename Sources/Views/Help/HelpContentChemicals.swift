@@ -1,6 +1,6 @@
 //
 //  HelpContentChemicals.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Migrated from React `HelpModal/content/ChemicalsAddedContent.jsx`.
 //

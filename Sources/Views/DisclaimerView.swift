@@ -1,6 +1,6 @@
 //
 //  DisclaimerView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import SwiftUI

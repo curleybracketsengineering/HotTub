@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import CoreData
@@ -19,6 +19,7 @@ struct ContentView: View {
                 MainTabView()
                     .onAppear {
                         HotTubModelContainer.seedIfNeeded(in: modelContext)
+                        guard !PreviewEnvironment.isActive else { return }
                         Task {
                             await ReminderNotificationService.shared.refreshAuthorizationStatus()
                             await ReminderNotificationService.shared.reschedule(context: modelContext)
@@ -32,30 +33,20 @@ struct ContentView: View {
         }
         .appPalette(colorScheme)
         .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
+            guard !PreviewEnvironment.isActive else { return }
             Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active,
-                  DisclaimerAcceptance.isAccepted(acceptedDisclaimerVersion) else { return }
+                  DisclaimerAcceptance.isAccepted(acceptedDisclaimerVersion),
+                  !PreviewEnvironment.isActive else { return }
             Task { await ReminderNotificationService.shared.reschedule(context: modelContext) }
         }
     }
 }
 
 private func makePreviewModelContainer() -> ModelContainer {
-    let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-    do {
-        return try ModelContainer(
-            for: AppSettings.self,
-            HotTubDailyLog.self,
-            WeeklyCheckLog.self,
-            MaintenanceLogEntry.self,
-            UsageLogEntry.self,
-            configurations: configuration
-        )
-    } catch {
-        fatalError("Preview ModelContainer failed: \(error.localizedDescription)")
-    }
+    HotTubModelContainer.preview
 }
 
 /// Marker so preview runs can replace the same sample rows without touching user-style data.

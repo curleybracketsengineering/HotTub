@@ -1,6 +1,6 @@
 //
 //  HelpContentDefault.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Migrated from React `HelpModal/content/DefaultContent.jsx`.
 //

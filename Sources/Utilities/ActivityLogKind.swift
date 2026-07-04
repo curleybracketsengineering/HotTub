@@ -1,6 +1,6 @@
 //
 //  ActivityLogKind.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import SwiftUI

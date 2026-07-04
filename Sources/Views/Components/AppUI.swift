@@ -1,6 +1,6 @@
 //
 //  AppUI.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Shared layout primitives (Documents/ui + AppPalette).
 //

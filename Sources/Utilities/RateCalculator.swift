@@ -1,6 +1,6 @@
 //
 //  RateCalculator.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Port of React rateCalculator.js for sanitizer consumption estimates.
 //

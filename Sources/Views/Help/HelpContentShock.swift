@@ -1,6 +1,6 @@
 //
 //  HelpContentShock.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Migrated from React `HelpModal/content/ShockContent.jsx`.
 //

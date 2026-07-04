@@ -1,6 +1,6 @@
 //
 //  HelpSheetView.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Sheet host migrated from React `HelpModal.jsx`.
 //

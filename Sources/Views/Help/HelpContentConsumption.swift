@@ -1,6 +1,6 @@
 //
 //  HelpContentConsumption.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Migrated from React `HelpModal/content/ConsumptionContent.jsx`.
 //

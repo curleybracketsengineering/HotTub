@@ -1,6 +1,6 @@
 //
 //  ReminderNotificationService.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Combine
@@ -35,6 +35,7 @@ final class ReminderNotificationService: NSObject, ObservableObject {
         get { UserDefaults.standard.object(forKey: StorageKey.remindersEnabled) as? Bool ?? true }
         set {
             UserDefaults.standard.set(newValue, forKey: StorageKey.remindersEnabled)
+            guard !PreviewEnvironment.isActive else { return }
             if newValue {
                 Task { await rescheduleFromSharedContainer() }
             } else {
@@ -56,6 +57,7 @@ final class ReminderNotificationService: NSObject, ObservableObject {
             let parts = Calendar.current.dateComponents([.hour, .minute], from: newValue)
             UserDefaults.standard.set(parts.hour ?? 9, forKey: StorageKey.reminderHour)
             UserDefaults.standard.set(parts.minute ?? 0, forKey: StorageKey.reminderMinute)
+            guard !PreviewEnvironment.isActive else { return }
             Task { await rescheduleFromSharedContainer() }
         }
     }
@@ -69,16 +71,22 @@ final class ReminderNotificationService: NSObject, ObservableObject {
 
     private override init() {
         super.init()
+        guard !PreviewEnvironment.isActive else { return }
         UNUserNotificationCenter.current().delegate = self
     }
 
     func refreshAuthorizationStatus() async {
+        guard !PreviewEnvironment.isActive else {
+            authorizationStatus = .notDetermined
+            return
+        }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         authorizationStatus = settings.authorizationStatus
     }
 
     @discardableResult
     func requestAuthorization() async -> Bool {
+        guard !PreviewEnvironment.isActive else { return false }
         do {
             let granted = try await UNUserNotificationCenter.current().requestAuthorization(
                 options: [.alert, .sound, .badge]
@@ -95,6 +103,7 @@ final class ReminderNotificationService: NSObject, ObservableObject {
     }
 
     func reschedule(context: ModelContext) async {
+        guard !PreviewEnvironment.isActive else { return }
         guard remindersEnabled else {
             cancelAll()
             return
@@ -115,6 +124,7 @@ final class ReminderNotificationService: NSObject, ObservableObject {
     }
 
     func rescheduleFromSharedContainer() async {
+        guard !PreviewEnvironment.isActive else { return }
         let context = ModelContext(HotTubModelContainer.shared)
         await reschedule(context: context)
     }
@@ -188,6 +198,7 @@ final class ReminderNotificationService: NSObject, ObservableObject {
     }
 
     private func cancelAll() {
+        guard !PreviewEnvironment.isActive else { return }
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [Identifier.daily, Identifier.weekly]
         )

@@ -1,6 +1,6 @@
 //
 //  MainTabView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import SwiftUI

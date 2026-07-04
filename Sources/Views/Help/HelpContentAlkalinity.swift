@@ -1,6 +1,6 @@
 //
 //  HelpContentAlkalinity.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Migrated from React `HelpModal/content/AlkalinityContent.jsx`.
 //

@@ -1,6 +1,6 @@
 //
 //  HelpContentCopper.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Migrated from React `HelpModal/content/CopperContent.jsx`.
 //

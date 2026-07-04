@@ -1,6 +1,6 @@
 //
 //  WeeklyLogFormView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import SwiftData

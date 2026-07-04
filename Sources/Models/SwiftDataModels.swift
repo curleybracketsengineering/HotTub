@@ -1,9 +1,12 @@
 //
 //  SwiftDataModels.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  SwiftData persistence aligned with the React app’s AsyncStorage shapes
 //  (daily logs, weekly checks, maintenance, usage, settings).
+//
+//  CloudKit requires inline property defaults (init defaults are not enough)
+//  and does not support @Attribute(.unique).
 //
 
 import Foundation
@@ -13,13 +16,14 @@ import SwiftData
 
 @Model
 final class AppSettings {
-    @Attribute(.unique) var settingsKey: String
-    var capacity: Double
-    var capacityUnit: String
-    var measurementSystem: String
-    var sanitizerType: String
-    var temperatureUnit: String
-    var updatedAt: Date
+    /// Stable key for singleton consolidation across devices (not a CloudKit unique constraint).
+    var settingsKey: String = "default"
+    var capacity: Double = 1000
+    var capacityUnit: String = "liters"
+    var measurementSystem: String = "metric"
+    var sanitizerType: String = "chlorine"
+    var temperatureUnit: String = "celsius"
+    var updatedAt: Date = Date.now
 
     init(
         settingsKey: String = "default",
@@ -66,8 +70,8 @@ final class AppSettings {
 @Model
 final class HotTubDailyLog {
     /// When the reading was taken (date and time).
-    var loggedAt: Date
-    var createdAt: Date
+    var loggedAt: Date = Date.now
+    var createdAt: Date = Date.now
 
     var waterTemperature: Int?
 
@@ -75,9 +79,9 @@ final class HotTubDailyLog {
     var sanitizerFree: Double?
     var sanitizerCombined: Double?
 
-    var addedPhUp: Double
-    var addedPhDown: Double
-    var addedSanitizer: Double
+    var addedPhUp: Double = 0
+    var addedPhDown: Double = 0
+    var addedSanitizer: Double = 0
 
     var notes: String?
 
@@ -115,8 +119,8 @@ final class HotTubDailyLog {
 
 @Model
 final class WeeklyCheckLog {
-    var loggedAt: Date
-    var createdAt: Date
+    var loggedAt: Date = Date.now
+    var createdAt: Date = Date.now
 
     var combinedChlorine: Double?
     /// Total sanitizer reading (ppm), e.g. total chlorine or total bromine on weekly check.
@@ -124,14 +128,14 @@ final class WeeklyCheckLog {
     var totalAlkalinity: Double?
     var copper: Double?
     var shockAdded: Double?
-    var shockType: String
+    var shockType: String = ""
     var alkalinityUpAdded: Double?
     var notes: String?
 
     /// Free-text water clarity (e.g. clear, hazy).
-    var waterClarity: String
+    var waterClarity: String = ""
     /// Whether foam was present on inspection.
-    var foamPresent: Bool
+    var foamPresent: Bool = false
 
     init(
         loggedAt: Date,
@@ -166,13 +170,13 @@ final class WeeklyCheckLog {
 
 @Model
 final class MaintenanceLogEntry {
-    var loggedAt: Date
-    var createdAt: Date
+    var loggedAt: Date = Date.now
+    var createdAt: Date = Date.now
 
-    var action: String
-    var notes: String
-    var filterChanged: Bool
-    var waterChange: Bool
+    var action: String = ""
+    var notes: String = ""
+    var filterChanged: Bool = false
+    var waterChange: Bool = false
 
     init(
         loggedAt: Date,
@@ -195,11 +199,11 @@ final class MaintenanceLogEntry {
 
 @Model
 final class UsageLogEntry {
-    var loggedAt: Date
-    var createdAt: Date
+    var loggedAt: Date = Date.now
+    var createdAt: Date = Date.now
 
-    var numUsers: Int
-    var durationMinutes: Int
+    var numUsers: Int = 1
+    var durationMinutes: Int = 15
     var waterTemperature: Int?
 
     init(

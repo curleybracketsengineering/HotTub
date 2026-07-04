@@ -1,6 +1,6 @@
 //
 //  HelpPrimitives.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  SwiftUI equivalents of React `CollapsibleSection`, `HelpText`, `BulletPoint`, `InfoBoxes`.
 //

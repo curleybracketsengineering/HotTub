@@ -1,6 +1,6 @@
 //
 //  DashboardView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Combine
@@ -47,12 +47,14 @@ struct DashboardView: View {
         }
         .task {
             viewModel.reload(context: modelContext)
+            guard !PreviewEnvironment.isActive else { return }
             await notificationService.refreshAuthorizationStatus()
             await notificationService.reschedule(context: modelContext)
         }
         .onAppear { viewModel.reload(context: modelContext) }
         .refreshable {
             viewModel.reload(context: modelContext)
+            guard !PreviewEnvironment.isActive else { return }
             await notificationService.reschedule(context: modelContext)
         }
         .sheet(isPresented: $showNotificationSettings) {
@@ -273,38 +275,40 @@ struct DashboardView: View {
 
     private var subActionRow: some View {
         HStack(spacing: AppSpacing.control) {
+           
+
             NavigationLink {
                 UsageLogFormView()
             } label: {
                 subActionTile(
                     title: "Log hot-tub usage",
-                    systemImage: "drop.fill",
-                    fillToken: .tagBlueFill,
-                    iconToken: .accentBlue
+                    systemImage: ActivityLogKind.usage.systemImage,
+                    fillToken: ActivityLogKind.usage.fillToken,
+                    iconToken: ActivityLogKind.usage.iconToken
                 )
             }
             .buttonStyle(.plain)
 
+            NavigationLink {
+                WeeklyLogFormView()
+            } label: {
+                subActionTile(
+                    title: "Weekly water check",
+                    systemImage: ActivityLogKind.weekly.systemImage,
+                    fillToken: ActivityLogKind.weekly.fillToken,
+                    iconToken: ActivityLogKind.weekly.iconToken
+                )
+            }
+            .buttonStyle(.plain)
+            
             NavigationLink {
                 MaintenanceLogFormView()
             } label: {
                 subActionTile(
                     title: "Record maintenance",
-                    systemImage: "wrench.fill",
-                    fillToken: .tagGreenFill,
-                    iconToken: .accentGreen
-                )
-            }
-            .buttonStyle(.plain)
-
-            NavigationLink {
-                HistoryView(isTabRoot: false)
-            } label: {
-                subActionTile(
-                    title: "View history",
-                    systemImage: "clock.arrow.circlepath",
-                    fillToken: .tagBlueFill,
-                    iconToken: .accentIndigo
+                    systemImage: ActivityLogKind.maintenance.systemImage,
+                    fillToken: ActivityLogKind.maintenance.fillToken,
+                    iconToken: ActivityLogKind.maintenance.iconToken
                 )
             }
             .buttonStyle(.plain)
@@ -516,4 +520,12 @@ private struct NotificationSettingsSheet: View {
         .presentationDetents([.medium])
         .appPalette(palette.colorScheme)
     }
+}
+
+#Preview {
+    NavigationStack {
+        DashboardView()
+    }
+    .modelContainer(HotTubModelContainer.preview)
+    .appPalette(.light)
 }

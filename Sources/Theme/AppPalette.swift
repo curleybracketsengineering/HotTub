@@ -1,6 +1,6 @@
 //
 //  AppPalette.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Semantic colours from ios-colour-example-page.html & ios-colour-schema 2.html.
 //

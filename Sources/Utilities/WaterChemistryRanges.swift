@@ -1,6 +1,6 @@
 //
 //  WaterChemistryRanges.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import SwiftUI

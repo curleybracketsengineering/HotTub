@@ -1,6 +1,6 @@
 //
 //  HotTubCSVService.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Export and import user logs as a simple CSV file.
 //

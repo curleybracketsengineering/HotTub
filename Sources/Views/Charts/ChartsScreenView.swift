@@ -1,6 +1,6 @@
 //
 //  ChartsScreenView.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Charts

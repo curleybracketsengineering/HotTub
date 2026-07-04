@@ -1,6 +1,6 @@
 //
 //  RelativeDateFormatter.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Foundation

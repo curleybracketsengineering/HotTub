@@ -1,6 +1,6 @@
 //
 //  HelpTopic.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Foundation

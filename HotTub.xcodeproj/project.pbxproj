@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		4A0137FF2F7D72650083E219 /* HotTub Buddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HotTub Buddy.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A0137FF2F7D72650083E219 /* HotTub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HotTub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -40,7 +40,7 @@
 		4A0138002F7D72650083E219 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				4A0137FF2F7D72650083E219 /* HotTub Buddy.app */,
+				4A0137FF2F7D72650083E219 /* HotTub.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,9 +48,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		4A0137FE2F7D72650083E219 /* HotTub Buddy */ = {
+		4A0137FE2F7D72650083E219 /* HotTub */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 4A01380A2F7D72660083E219 /* Build configuration list for PBXNativeTarget "HotTub Buddy" */;
+			buildConfigurationList = 4A01380A2F7D72660083E219 /* Build configuration list for PBXNativeTarget "HotTub" */;
 			buildPhases = (
 				4A0137FB2F7D72650083E219 /* Sources */,
 				4A0137FC2F7D72650083E219 /* Frameworks */,
@@ -63,11 +63,11 @@
 			fileSystemSynchronizedGroups = (
 				4A0138012F7D72650083E219 /* Sources */,
 			);
-			name = "HotTub Buddy";
+			name = HotTub;
 			packageProductDependencies = (
 			);
-			productName = "HotTub Buddy";
-			productReference = 4A0137FF2F7D72650083E219 /* HotTub Buddy.app */;
+			productName = HotTub;
+			productReference = 4A0137FF2F7D72650083E219 /* HotTub.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -99,7 +99,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4A0137FE2F7D72650083E219 /* HotTub Buddy */,
+				4A0137FE2F7D72650083E219 /* HotTub */,
 			);
 		};
 /* End PBXProject section */
@@ -330,7 +330,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		4A01380A2F7D72660083E219 /* Build configuration list for PBXNativeTarget "HotTub Buddy" */ = {
+		4A01380A2F7D72660083E219 /* Build configuration list for PBXNativeTarget "HotTub" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4A01380B2F7D72660083E219 /* Debug */,

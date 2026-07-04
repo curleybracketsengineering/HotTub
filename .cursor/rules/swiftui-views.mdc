@@ -5,7 +5,7 @@ globs:
 alwaysApply: false
 ---
 
-# SwiftUI views (HotTub Buddy)
+# SwiftUI views (HotTub)
 
 Applies when editing Swift under `Sources/`. Full system: `~/Documents/ui/` + always-on rule `ios-design-system`.
 

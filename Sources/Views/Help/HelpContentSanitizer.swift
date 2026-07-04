@@ -1,6 +1,6 @@
 //
 //  HelpContentSanitizer.swift
-//  HotTub Buddy
+//  HotTub
 //
 //  Single sanitizer guide; `focus` controls which section opens first.
 //

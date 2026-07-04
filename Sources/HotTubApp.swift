@@ -1,14 +1,15 @@
 //
-//  HotTubBuddyApp.swift
-//  HotTub Buddy
+//  HotTubApp.swift
+//  HotTub
 //
 
 import SwiftData
 import SwiftUI
 
 @main
-struct HotTubBuddyApp: App {
+struct HotTubApp: App {
     init() {
+        guard !PreviewEnvironment.isActive else { return }
         _ = ReminderNotificationService.shared
     }
 

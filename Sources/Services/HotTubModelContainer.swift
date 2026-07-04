@@ -1,6 +1,6 @@
 //
 //  HotTubModelContainer.swift
-//  HotTub Buddy
+//  HotTub
 //
 
 import Foundation
@@ -19,17 +19,53 @@ enum HotTubModelContainer {
     ])
 
     static let shared: ModelContainer = {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+            return preview
+        }
+        #endif
+
         do {
-            let config = ModelConfiguration(
-                schema: schema,
-                cloudKitDatabase: .automatic
-            )
-            return try ModelContainer(for: schema, configurations: config)
+            return try makeContainer()
         } catch {
             logger.error("SwiftData CloudKit container failed: \(error.localizedDescription, privacy: .public)")
             fatalError("SwiftData container failed: \(error.localizedDescription)")
         }
     }()
+
+    /// In-memory store for Canvas previews — never uses CloudKit.
+    static let preview: ModelContainer = {
+        do {
+            let config = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: true,
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(for: schema, configurations: config)
+        } catch {
+            fatalError("Preview ModelContainer failed: \(error.localizedDescription)")
+        }
+    }()
+
+    private static func makeContainer() throws -> ModelContainer {
+        let cloudConfig = ModelConfiguration(
+            schema: schema,
+            cloudKitDatabase: .automatic
+        )
+
+        do {
+            return try ModelContainer(for: schema, configurations: cloudConfig)
+        } catch {
+            // Allow schema migration from a prior local-only store, then retry CloudKit.
+            logger.warning("CloudKit store open failed, running local migration pass: \(error.localizedDescription, privacy: .public)")
+            let localConfig = ModelConfiguration(
+                schema: schema,
+                cloudKitDatabase: .none
+            )
+            _ = try ModelContainer(for: schema, configurations: localConfig)
+            return try ModelContainer(for: schema, configurations: cloudConfig)
+        }
+    }
 
     /// Removes duplicate `AppSettings` rows after multi-device sync.
     @MainActor
