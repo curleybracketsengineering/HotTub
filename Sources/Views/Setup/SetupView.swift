@@ -143,7 +143,7 @@ private struct SetupSettingsForm: View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             AppSectionHeader(
                 title: "Data",
-                subtitle: "Save backups or import records from the app’s Backups folder or another file"
+                subtitle: "Records sync automatically across your devices via the iCloud account on this device. CSV backup and import remain available for manual backup or restore."
             )
 
             VStack(spacing: 0) {

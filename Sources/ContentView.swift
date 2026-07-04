@@ -3,12 +3,14 @@
 //  HotTub Buddy
 //
 
+import CoreData
 import SwiftData
 import SwiftUI
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(DisclaimerAcceptance.storageKey) private var acceptedDisclaimerVersion = ""
 
     var body: some View {
@@ -29,6 +31,14 @@ struct ContentView: View {
             }
         }
         .appPalette(colorScheme)
+        .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
+            Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active,
+                  DisclaimerAcceptance.isAccepted(acceptedDisclaimerVersion) else { return }
+            Task { await ReminderNotificationService.shared.reschedule(context: modelContext) }
+        }
     }
 }
 

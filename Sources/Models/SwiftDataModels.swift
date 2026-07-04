@@ -13,6 +13,7 @@ import SwiftData
 
 @Model
 final class AppSettings {
+    @Attribute(.unique) var settingsKey: String
     var capacity: Double
     var capacityUnit: String
     var measurementSystem: String
@@ -21,6 +22,7 @@ final class AppSettings {
     var updatedAt: Date
 
     init(
+        settingsKey: String = "default",
         capacity: Double = 1000,
         capacityUnit: String = "liters",
         measurementSystem: String = "metric",
@@ -28,6 +30,7 @@ final class AppSettings {
         temperatureUnit: String = "celsius",
         updatedAt: Date = .now
     ) {
+        self.settingsKey = settingsKey
         self.capacity = capacity
         self.capacityUnit = capacityUnit
         self.measurementSystem = measurementSystem
