@@ -26,6 +26,7 @@ private struct ChemistryPeriodSummary {
     let phInRangePercent: Int?
     let sanitizerReadingCount: Int
     let sanitizerLowCount: Int
+    let sanitizerHighCount: Int
 }
 
 private enum ChartRange: String, CaseIterable {
@@ -271,26 +272,99 @@ struct ChartsScreenView: View {
     }
 
     private var phMarks: [ChartPoint] {
-        let cal = Calendar.current
-        return filteredDailyLogs.compactMap { log in
-            guard let ph = log.ph else { return nil }
-            let day = cal.startOfDay(for: log.loggedAt)
-            return ChartPoint(id: log.persistentModelID, day: day, value: ph)
-        }
+        chemistryMarks(from: filteredDailyLogs) { $0.ph }
     }
 
     private var sanitizerMarks: [ChartPoint] {
+        chemistryMarks(from: filteredDailyLogs) { $0.primarySanitizerPpm }
+    }
+
+    /// One chart point per calendar day (latest log wins when multiple entries share a day).
+    private func chemistryMarks(
+        from logs: [HotTubDailyLog],
+        value: (HotTubDailyLog) -> Double?
+    ) -> [ChartPoint] {
         let cal = Calendar.current
-        return filteredDailyLogs.compactMap { log in
-            guard let ppm = log.primarySanitizerPpm else { return nil }
+        var latestByDay: [Date: HotTubDailyLog] = [:]
+        for log in logs {
             let day = cal.startOfDay(for: log.loggedAt)
-            return ChartPoint(id: log.persistentModelID, day: day, value: ppm)
+            if let existing = latestByDay[day] {
+                if log.loggedAt >= existing.loggedAt {
+                    latestByDay[day] = log
+                }
+            } else {
+                latestByDay[day] = log
+            }
         }
+        return latestByDay.values
+            .sorted { $0.loggedAt < $1.loggedAt }
+            .compactMap { log in
+                guard let reading = value(log) else { return nil }
+                let day = cal.startOfDay(for: log.loggedAt)
+                return ChartPoint(id: log.persistentModelID, day: day, value: reading)
+            }
     }
 
     private var sanitizerYDomain: ClosedRange<Double> {
-        if isBromine { return 0 ... 6 }
-        return 0 ... 5
+        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        let defaultUpper = isBromine ? 6.0 : 5.0
+        return chemistryYDomain(
+            marks: sanitizerMarks,
+            idealRange: ideal,
+            defaultLower: 0,
+            defaultUpper: defaultUpper,
+            padding: 0,
+            roundTo: 1
+        )
+    }
+
+    private var phYDomain: ClosedRange<Double> {
+        chemistryYDomain(
+            marks: phMarks,
+            idealRange: WaterChemistryRanges.phIdeal,
+            defaultLower: 6.8,
+            defaultUpper: 8.2,
+            padding: 0.2,
+            roundTo: 0.1
+        )
+    }
+
+    private func chemistryYDomain(
+        marks: [ChartPoint],
+        idealRange: ClosedRange<Double>,
+        defaultLower: Double,
+        defaultUpper: Double,
+        padding: Double,
+        roundTo: Double
+    ) -> ClosedRange<Double> {
+        let dataMin = marks.map(\.value).min() ?? idealRange.lowerBound
+        let dataMax = marks.map(\.value).max() ?? idealRange.upperBound
+        let rawLower = min(defaultLower, idealRange.lowerBound, dataMin)
+        let rawUpper = max(defaultUpper, idealRange.upperBound, dataMax)
+
+        let paddedLower = roundDown(rawLower - padding, to: roundTo)
+        let paddedUpper: Double = if roundTo >= 1 {
+            if rawUpper <= defaultUpper {
+                defaultUpper
+            } else if rawUpper <= 10 {
+                ceil(rawUpper + padding)
+            } else {
+                ceil((rawUpper + padding) / 5) * 5
+            }
+        } else {
+            roundUp(rawUpper + padding, to: roundTo)
+        }
+        return paddedLower ... paddedUpper
+    }
+
+    private func roundDown(_ value: Double, to step: Double) -> Double {
+        guard step > 0 else { return value }
+        return floor(value / step) * step
+    }
+
+    private func roundUp(_ value: Double, to step: Double) -> Double {
+        guard step > 0 else { return value }
+        return ceil(value / step) * step
     }
 
     private var userCountByDay: [String: Int] {
@@ -325,18 +399,20 @@ struct ChartsScreenView: View {
             : Int((Double(phValues.filter { WaterChemistryRanges.phIdeal.contains($0) }.count)
                 / Double(phValues.count) * 100).rounded())
 
-        let idealMin = isBromine
-            ? WaterChemistryRanges.bromineIdeal.lowerBound
-            : WaterChemistryRanges.chlorineIdeal.lowerBound
+        let ideal = isBromine
+            ? WaterChemistryRanges.bromineIdeal
+            : WaterChemistryRanges.chlorineIdeal
         let sanitizerValues = logs.compactMap(\.primarySanitizerPpm)
-        let sanitizerLowCount = sanitizerValues.filter { $0 < idealMin }.count
+        let sanitizerLowCount = sanitizerValues.filter { $0 < ideal.lowerBound }.count
+        let sanitizerHighCount = sanitizerValues.filter { $0 > ideal.upperBound }.count
 
         return ChemistryPeriodSummary(
             testsRecorded: logs.count,
             phReadingCount: phValues.count,
             phInRangePercent: phInRangePercent,
             sanitizerReadingCount: sanitizerValues.count,
-            sanitizerLowCount: sanitizerLowCount
+            sanitizerLowCount: sanitizerLowCount,
+            sanitizerHighCount: sanitizerHighCount
         )
     }
 
@@ -413,7 +489,10 @@ struct ChartsScreenView: View {
                     phSummaryCard(percent: percent)
                 }
                 if summary.sanitizerReadingCount > 0 {
-                    sanitizerSummaryCard(lowCount: summary.sanitizerLowCount)
+                    sanitizerSummaryCard(
+                        lowCount: summary.sanitizerLowCount,
+                        highCount: summary.sanitizerHighCount
+                    )
                 }
             }
 
@@ -447,45 +526,69 @@ struct ChartsScreenView: View {
         .appCard(palette: palette, radius: AppSpacing.cardRadius, padding: 16)
     }
 
-    private func sanitizerSummaryCard(lowCount: Int) -> some View {
-        let inRange = lowCount == 0
+    private func sanitizerSummaryCard(lowCount: Int, highCount: Int) -> some View {
+        let inRange = lowCount == 0 && highCount == 0
+        let outOfRangeCount = lowCount + highCount
+        let accentColor: Color = {
+            if inRange { return palette.color(.accentGreen) }
+            if highCount > 0 { return palette.color(.accentRed) }
+            return palette.color(.accentOrange)
+        }()
+
         return VStack(spacing: 12) {
             if inRange {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 40, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(palette.color(.accentGreen))
+                    .foregroundStyle(accentColor)
                     .frame(height: 72)
             } else {
                 VStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 28, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(palette.color(.accentOrange))
-                    Text("\(lowCount)")
+                        .foregroundStyle(accentColor)
+                    Text("\(outOfRangeCount)")
                         .font(.title.weight(.bold))
                         .foregroundStyle(palette.color(.textPrimary))
                 }
                 .frame(height: 72)
             }
 
-            Text(inRange ? "\(sanitizerLabel) in range" : "Low \(sanitizerLabel.lowercased())")
+            Text(sanitizerSummaryTitle(lowCount: lowCount, highCount: highCount))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.color(.textPrimary))
 
-            Text(
-                inRange
-                    ? "All readings in range \(summaryPeriodPhrase)."
-                    : "\(lowCount) time\(lowCount == 1 ? "" : "s") \(summaryPeriodPhrase) below recommended range."
-            )
-            .font(.caption)
-            .foregroundStyle(palette.color(.textSecondary))
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
+            Text(sanitizerSummaryDetail(lowCount: lowCount, highCount: highCount))
+                .font(.caption)
+                .foregroundStyle(palette.color(.textSecondary))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
         .appCard(palette: palette, radius: AppSpacing.cardRadius, padding: 16)
+    }
+
+    private func sanitizerSummaryTitle(lowCount: Int, highCount: Int) -> String {
+        let name = sanitizerLabel.lowercased()
+        if lowCount == 0, highCount == 0 { return "\(sanitizerLabel) in range" }
+        if lowCount > 0, highCount == 0 { return "Low \(name)" }
+        if highCount > 0, lowCount == 0 { return "High \(name)" }
+        return "\(sanitizerLabel) outside range"
+    }
+
+    private func sanitizerSummaryDetail(lowCount: Int, highCount: Int) -> String {
+        if lowCount == 0, highCount == 0 {
+            return "All readings in range \(summaryPeriodPhrase)."
+        }
+        if lowCount > 0, highCount == 0 {
+            return "\(lowCount) time\(lowCount == 1 ? "" : "s") \(summaryPeriodPhrase) below recommended range."
+        }
+        if highCount > 0, lowCount == 0 {
+            return "\(highCount) time\(highCount == 1 ? "" : "s") \(summaryPeriodPhrase) above recommended range."
+        }
+        return "\(lowCount) below and \(highCount) above recommended range \(summaryPeriodPhrase)."
     }
 
     private var chemistryTipBanner: some View {
@@ -719,7 +822,7 @@ struct ChartsScreenView: View {
             subtitle: "Target 7.2–7.8",
             marks: phMarks,
             idealRange: WaterChemistryRanges.phIdeal,
-            yDomain: 6.8 ... 8.2,
+            yDomain: phYDomain,
             yAxisFormat: { String(format: "%.1f", $0) },
             status: WaterChemistryRanges.phStatus,
             emptyMessage: "No pH readings in \(noDataPeriodPhrase)."
@@ -778,13 +881,15 @@ struct ChartsScreenView: View {
                         )
                         .foregroundStyle(palette.color(.statusSuccessFill))
 
-                        ForEach(marks) { mark in
-                            LineMark(
-                                x: .value("Day", mark.day, unit: .day),
-                                y: .value(title, mark.value)
-                            )
-                            .foregroundStyle(palette.color(.separator).opacity(0.6))
-                            .interpolationMethod(.catmullRom)
+                        if marks.count >= 2 {
+                            ForEach(marks) { mark in
+                                LineMark(
+                                    x: .value("Day", mark.day, unit: .day),
+                                    y: .value(title, mark.value)
+                                )
+                                .foregroundStyle(palette.color(.separator).opacity(0.6))
+                                .interpolationMethod(.catmullRom)
+                            }
                         }
 
                         ForEach(marks) { mark in

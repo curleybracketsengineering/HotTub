@@ -200,6 +200,7 @@ struct DailyLogFormView: View {
         .onChange(of: formSnapshot) { _, _ in scheduleAutoSave() }
         .onDisappear {
             autoSaveScheduler.flush { persistDraft() }
+            refreshReminders()
             if existing == nil, let draft = draftRecord, isEmptyDraft(draft) {
                 modelContext.delete(draft)
                 try? modelContext.save()
@@ -249,9 +250,9 @@ struct DailyLogFormView: View {
     private func persistDraft() -> Bool {
         guard existing != nil || hasDraftContent else { return true }
 
-        let phVal = FormFieldParsing.optionalDouble(from: ph)
-        let freeVal = FormFieldParsing.optionalDouble(from: sanitizerFree)
-        let combVal = FormFieldParsing.optionalDouble(from: sanitizerCombined)
+        let phVal = FormFieldParsing.validatedOptionalDouble(from: ph, min: 0, max: 14)
+        let freeVal = FormFieldParsing.validatedOptionalDouble(from: sanitizerFree, min: 0, max: 20)
+        let combVal = FormFieldParsing.validatedOptionalDouble(from: sanitizerCombined, min: 0, max: 20)
 
         let record: HotTubDailyLog
         if let existing {
@@ -277,8 +278,12 @@ struct DailyLogFormView: View {
 
         apply(to: record, phVal: phVal, freeVal: freeVal, combVal: combVal)
         try? modelContext.save()
-        Task { await ReminderNotificationService.shared.reschedule(context: modelContext) }
         return true
+    }
+
+    private func refreshReminders() {
+        guard !PreviewEnvironment.isActive else { return }
+        Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
     }
 
     private func finish() {
@@ -300,6 +305,7 @@ struct DailyLogFormView: View {
         }
 
         autoSaveScheduler.flush { persistDraft() }
+        refreshReminders()
         dismiss()
     }
 
@@ -335,6 +341,7 @@ struct DailyLogFormView: View {
         guard let record = activeRecord else { return }
         modelContext.delete(record)
         try? modelContext.save()
+        refreshReminders()
         dismiss()
     }
 }

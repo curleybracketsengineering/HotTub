@@ -228,6 +228,7 @@ struct WeeklyLogFormView: View {
         .onChange(of: formSnapshot) { _, _ in scheduleAutoSave() }
         .onDisappear {
             autoSaveScheduler.flush { persistDraft() }
+            refreshReminders()
             if existing == nil, let draft = draftRecord, isEmptyDraft(draft) {
                 modelContext.delete(draft)
                 try? modelContext.save()
@@ -283,6 +284,11 @@ struct WeeklyLogFormView: View {
         guard existing != nil || hasDraftContent else { return true }
 
         let shockVal = FormFieldParsing.nonNegativeDouble(from: shock)
+        let combinedVal = FormFieldParsing.validatedOptionalDouble(from: combined, min: 0, max: 50)
+        let totalVal = FormFieldParsing.validatedOptionalDouble(from: total, min: 0, max: 50)
+        let alkalinityVal = FormFieldParsing.validatedOptionalDouble(from: alkalinity, min: 0, max: 300)
+        let copperVal = FormFieldParsing.validatedOptionalDouble(from: copper, min: 0, max: 5)
+
         let record: WeeklyCheckLog
         if let existing {
             record = existing
@@ -291,10 +297,10 @@ struct WeeklyLogFormView: View {
         } else {
             let log = WeeklyCheckLog(
                 loggedAt: loggedAt,
-                combinedChlorine: FormFieldParsing.optionalDouble(from: combined),
-                sanitizerTotal: FormFieldParsing.optionalDouble(from: total),
-                totalAlkalinity: FormFieldParsing.optionalDouble(from: alkalinity),
-                copper: FormFieldParsing.optionalDouble(from: copper),
+                combinedChlorine: combinedVal,
+                sanitizerTotal: totalVal,
+                totalAlkalinity: alkalinityVal,
+                copper: copperVal,
                 shockAdded: shockVal,
                 shockType: shockType,
                 alkalinityUpAdded: FormFieldParsing.nonNegativeDouble(from: alkUp),
@@ -307,10 +313,21 @@ struct WeeklyLogFormView: View {
             record = log
         }
 
-        apply(to: record, shockVal: shockVal)
+        apply(
+            to: record,
+            shockVal: shockVal,
+            combinedVal: combinedVal,
+            totalVal: totalVal,
+            alkalinityVal: alkalinityVal,
+            copperVal: copperVal
+        )
         try? modelContext.save()
-        Task { await ReminderNotificationService.shared.reschedule(context: modelContext) }
         return true
+    }
+
+    private func refreshReminders() {
+        guard !PreviewEnvironment.isActive else { return }
+        Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
     }
 
     private func finish() {
@@ -334,22 +351,30 @@ struct WeeklyLogFormView: View {
         }
 
         autoSaveScheduler.flush { persistDraft() }
+        refreshReminders()
         dismiss()
     }
 
-    private func apply(to record: WeeklyCheckLog, shockVal: Double) {
+    private func apply(
+        to record: WeeklyCheckLog,
+        shockVal: Double,
+        combinedVal: Double?,
+        totalVal: Double?,
+        alkalinityVal: Double?,
+        copperVal: Double?
+    ) {
         record.loggedAt = loggedAt
-        if combined.trimmingCharacters(in: .whitespaces).isEmpty || FormFieldParsing.optionalDouble(from: combined) != nil {
-            record.combinedChlorine = FormFieldParsing.optionalDouble(from: combined)
+        if combined.trimmingCharacters(in: .whitespaces).isEmpty || combinedVal != nil {
+            record.combinedChlorine = combinedVal
         }
-        if total.trimmingCharacters(in: .whitespaces).isEmpty || FormFieldParsing.optionalDouble(from: total) != nil {
-            record.sanitizerTotal = FormFieldParsing.optionalDouble(from: total)
+        if total.trimmingCharacters(in: .whitespaces).isEmpty || totalVal != nil {
+            record.sanitizerTotal = totalVal
         }
-        if alkalinity.trimmingCharacters(in: .whitespaces).isEmpty || FormFieldParsing.optionalDouble(from: alkalinity) != nil {
-            record.totalAlkalinity = FormFieldParsing.optionalDouble(from: alkalinity)
+        if alkalinity.trimmingCharacters(in: .whitespaces).isEmpty || alkalinityVal != nil {
+            record.totalAlkalinity = alkalinityVal
         }
-        if copper.trimmingCharacters(in: .whitespaces).isEmpty || FormFieldParsing.optionalDouble(from: copper) != nil {
-            record.copper = FormFieldParsing.optionalDouble(from: copper)
+        if copper.trimmingCharacters(in: .whitespaces).isEmpty || copperVal != nil {
+            record.copper = copperVal
         }
         record.shockAdded = shockVal
         record.shockType = shockType
@@ -376,6 +401,7 @@ struct WeeklyLogFormView: View {
         guard let record = activeRecord else { return }
         modelContext.delete(record)
         try? modelContext.save()
+        refreshReminders()
         dismiss()
     }
 }

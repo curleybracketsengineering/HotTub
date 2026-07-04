@@ -11,7 +11,7 @@ final class FormAutoSaveScheduler {
 
     func schedule(after seconds: TimeInterval = 0.4, _ action: @escaping () -> Void) {
         task?.cancel()
-        task = Task {
+        task = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(Int(seconds * 1000)))
             guard !Task.isCancelled else { return }
             action()
@@ -39,5 +39,12 @@ enum FormFieldParsing {
 
     static func nonNegativeDouble(from text: String, default defaultValue: Double = 0) -> Double {
         optionalDouble(from: text).map { max(0, $0) } ?? defaultValue
+    }
+
+    /// Parses a number only when it lies within `min...max` (empty text → nil).
+    static func validatedOptionalDouble(from text: String, min: Double, max: Double) -> Double? {
+        guard let value = optionalDouble(from: text) else { return nil }
+        guard value >= min, value <= max else { return nil }
+        return value
     }
 }
