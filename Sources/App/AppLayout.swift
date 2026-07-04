@@ -25,6 +25,24 @@ enum AppLayout {
         guard UIDevice.current.userInterfaceIdiom == .pad else { return false }
         return availableWidth >= padLayoutMinimumWidth
     }
+
+    static func isLandscape(size: CGSize) -> Bool {
+        size.width > size.height
+    }
+}
+
+private struct IsLandscapeKey: EnvironmentKey {
+    static let defaultValue: Bool = {
+        let bounds = UIScreen.main.bounds
+        return AppLayout.isLandscape(size: bounds.size)
+    }()
+}
+
+extension EnvironmentValues {
+    var isLandscape: Bool {
+        get { self[IsLandscapeKey.self] }
+        set { self[IsLandscapeKey.self] = newValue }
+    }
 }
 
 private struct UsePadLayoutKey: EnvironmentKey {

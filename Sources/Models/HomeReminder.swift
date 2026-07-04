@@ -30,6 +30,62 @@ struct HomeReminder: Identifiable {
     func dueSubtitle(relativeTo reference: Date = .now) -> String {
         RelativeDateFormatter.dueSubtitle(for: dueDate, relativeTo: reference)
     }
+
+    func padSubtitle(relativeTo reference: Date = .now) -> String {
+        if let overdue = RelativeDateFormatter.overdueDetail(for: dueDate, relativeTo: reference) {
+            return overdue
+        }
+        switch urgency(relativeTo: reference) {
+        case .dueToday:
+            return "Due today"
+        case .upcoming:
+            let delta = Calendar.current.dateComponents(
+                [.day],
+                from: Calendar.current.startOfDay(for: reference),
+                to: Calendar.current.startOfDay(for: dueDate)
+            ).day ?? 0
+            if delta == 1 { return "Due tomorrow" }
+            return "Due in \(delta) days"
+        case .overdue:
+            return RelativeDateFormatter.overdueDetail(for: dueDate, relativeTo: reference) ?? "Overdue"
+        }
+    }
+
+    func badgeLabel(relativeTo reference: Date = .now) -> String {
+        switch urgency(relativeTo: reference) {
+        case .overdue:
+            return "Overdue"
+        case .dueToday:
+            return "Due today"
+        case .upcoming:
+            return RelativeDateFormatter.dueBadgeDate(for: dueDate)
+        }
+    }
+
+    enum Urgency {
+        case overdue
+        case dueToday
+        case upcoming
+    }
+
+    func urgency(relativeTo reference: Date = .now) -> Urgency {
+        let cal = Calendar.current
+        let dayDelta = cal.dateComponents(
+            [.day],
+            from: cal.startOfDay(for: reference),
+            to: cal.startOfDay(for: dueDate)
+        ).day ?? 0
+        if dayDelta < 0 { return .overdue }
+        if dayDelta == 0 { return .dueToday }
+        return .upcoming
+    }
+
+    var padTitle: String {
+        switch kind {
+        case .dailyWaterTest: "Water test"
+        case .weeklyWaterCheck: "Weekly water check"
+        }
+    }
 }
 
 enum ReminderSchedule {

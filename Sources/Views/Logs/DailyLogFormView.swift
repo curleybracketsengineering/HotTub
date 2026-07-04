@@ -10,6 +10,8 @@ struct DailyLogFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.usePadLayout) private var usePadLayout
+    @Environment(\.isLandscape) private var isLandscape
 
     let existing: HotTubDailyLog?
 
@@ -66,6 +68,7 @@ struct DailyLogFormView: View {
                     DatePicker(
                         "Date & time",
                         selection: $loggedAt,
+                        in: ...FormValidation.latestLoggableMoment(),
                         displayedComponents: [.date, .hourAndMinute]
                     )
                     .datePickerStyle(.compact)
@@ -95,75 +98,14 @@ struct DailyLogFormView: View {
                     .frame(minHeight: AppSpacing.minTap)
                 }
 
-                AppFormScreenSection(title: "Chemical readings", presentedHelp: $presentedHelp) {
-                    AppLabeledFormField(
-                        title: "pH",
-                        helpRequest: .ph(.overview),
-                        presentedHelp: $presentedHelp,
-                        systemImage: "flask",
-                        placeholder: "7.2-7.8",
-                        text: $ph,
-                        blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 14) }
-                    )
-                    AppLabeledFormField(
-                        title: isBromine ? "Bromine (ppm)" : "Free chlorine (ppm)",
-                        helpRequest: .sanitizer(.free),
-                        presentedHelp: $presentedHelp,
-                        systemImage: "drop.fill",
-                        placeholder: freeSanitizerPlaceholder,
-                        text: $sanitizerFree,
-                        blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 20) }
-                    )
-                    if !isBromine {
-                        AppLabeledFormField(
-                            title: "Combined chlorine (ppm)",
-                            helpRequest: .sanitizer(.combined),
-                            presentedHelp: $presentedHelp,
-                            systemImage: "drop.triangle",
-                            placeholder: "0.0-0.5",
-                            text: $sanitizerCombined,
-                            blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 20) }
-                        )
-                    }
-                }
-
-                AppFormScreenSection(
-                    title: "Chemicals added",
-                    helpRequest: HelpSheetRequest(topic: .chemicalsAdded),
-                    presentedHelp: $presentedHelp
-                ) {
-                    AppSimpleMetricField(
-                        title: "\(sanitizerName) added (\(weightUnit))",
-                        systemImage: "bolt.fill",
-                        placeholder: "0.0 \(weightUnit)",
-                        text: $addedSanitizer,
-                        blurValidator: FormValidation.blurNonNegativeError
-                    )
-                    AppLabeledFormField(
-                        title: "pH Down added (\(weightUnit))",
-                        helpRequest: .ph(.down),
-                        presentedHelp: $presentedHelp,
-                        systemImage: "arrow.down.right",
-                        placeholder: "0.0 \(weightUnit)",
-                        text: $addedPhDown,
-                        blurValidator: FormValidation.blurNonNegativeError
-                    )
-                    AppLabeledFormField(
-                        title: "pH Up added (\(weightUnit))",
-                        helpRequest: .ph(.up),
-                        presentedHelp: $presentedHelp,
-                        systemImage: "arrow.up.right",
-                        placeholder: "0.0 \(weightUnit)",
-                        text: $addedPhUp,
-                        blurValidator: FormValidation.blurNonNegativeError
-                    )
-                }
+                chemicalsLayout
 
                 AppFormScreenSection(title: "Notes", presentedHelp: $presentedHelp) {
                     AppFormNotesField(text: $notes)
                 }
             }
-            .appScrollScreenPadding()
+            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+            .padReadableContent(maxWidth: PadContentLayout.settingsMaxWidth)
         }
         .scrollDismissesKeyboard(.interactively)
         .appGroupedScreenBackground(palette)
@@ -210,6 +152,95 @@ struct DailyLogFormView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage ?? "")
+        }
+    }
+
+    private var usesSideBySideChemicals: Bool {
+        usePadLayout && isLandscape
+    }
+
+    @ViewBuilder
+    private var chemicalsLayout: some View {
+        if usesSideBySideChemicals {
+            HStack(alignment: .top, spacing: AppSpacing.control) {
+                chemicalReadingsSection
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                chemicalsAddedSection
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: AppSpacing.section) {
+                chemicalReadingsSection
+                chemicalsAddedSection
+            }
+        }
+    }
+
+    private var chemicalReadingsSection: some View {
+        AppFormScreenSection(title: "Chemical readings", presentedHelp: $presentedHelp) {
+            AppLabeledFormField(
+                title: "pH",
+                helpRequest: .ph(.overview),
+                presentedHelp: $presentedHelp,
+                systemImage: "flask",
+                placeholder: "7.2-7.8",
+                text: $ph,
+                blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 14) }
+            )
+            AppLabeledFormField(
+                title: isBromine ? "Bromine (ppm)" : "Free chlorine (ppm)",
+                helpRequest: .sanitizer(.free),
+                presentedHelp: $presentedHelp,
+                systemImage: "drop.fill",
+                placeholder: freeSanitizerPlaceholder,
+                text: $sanitizerFree,
+                blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 20) }
+            )
+            if !isBromine {
+                AppLabeledFormField(
+                    title: "Combined chlorine (ppm)",
+                    helpRequest: .sanitizer(.combined),
+                    presentedHelp: $presentedHelp,
+                    systemImage: "drop.triangle",
+                    placeholder: "0.0-0.5",
+                    text: $sanitizerCombined,
+                    blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 20) }
+                )
+            }
+        }
+    }
+
+    private var chemicalsAddedSection: some View {
+        AppFormScreenSection(
+            title: "Chemicals added",
+            helpRequest: HelpSheetRequest(topic: .chemicalsAdded),
+            presentedHelp: $presentedHelp
+        ) {
+            AppSimpleMetricField(
+                title: "\(sanitizerName) added (\(weightUnit))",
+                systemImage: "bolt.fill",
+                placeholder: "0.0 \(weightUnit)",
+                text: $addedSanitizer,
+                blurValidator: FormValidation.blurNonNegativeError
+            )
+            AppLabeledFormField(
+                title: "pH Down added (\(weightUnit))",
+                helpRequest: .ph(.down),
+                presentedHelp: $presentedHelp,
+                systemImage: "arrow.down.right",
+                placeholder: "0.0 \(weightUnit)",
+                text: $addedPhDown,
+                blurValidator: FormValidation.blurNonNegativeError
+            )
+            AppLabeledFormField(
+                title: "pH Up added (\(weightUnit))",
+                helpRequest: .ph(.up),
+                presentedHelp: $presentedHelp,
+                systemImage: "arrow.up.right",
+                placeholder: "0.0 \(weightUnit)",
+                text: $addedPhUp,
+                blurValidator: FormValidation.blurNonNegativeError
+            )
         }
     }
 

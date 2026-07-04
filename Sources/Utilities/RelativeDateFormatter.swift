@@ -51,7 +51,7 @@ enum RelativeDateFormatter {
         return formatted
     }
 
-    /// Due subtitle for reminders: "Due today", "Due tomorrow", "Due in N days", "Overdue".
+    /// "Due today", "Due tomorrow", "Due in N days", "Overdue".
     static func dueSubtitle(for dueDate: Date, relativeTo reference: Date = .now) -> String {
         let startOfReference = calendar.startOfDay(for: reference)
         let startOfDue = calendar.startOfDay(for: dueDate)
@@ -67,5 +67,21 @@ enum RelativeDateFormatter {
         default:
             return "Due in \(dayDelta) days"
         }
+    }
+
+    /// "Overdue by 2 days" when the due date is in the past; nil otherwise.
+    static func overdueDetail(for dueDate: Date, relativeTo reference: Date = .now) -> String? {
+        let startOfReference = calendar.startOfDay(for: reference)
+        let startOfDue = calendar.startOfDay(for: dueDate)
+        let dayDelta = calendar.dateComponents([.day], from: startOfDue, to: startOfReference).day ?? 0
+        guard dayDelta > 0 else { return nil }
+        return dayDelta == 1 ? "Overdue by 1 day" : "Overdue by \(dayDelta) days"
+    }
+
+    /// Short due date for reminder badges, e.g. "Due 30 May".
+    static func dueBadgeDate(for dueDate: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("d MMM")
+        return "Due \(formatter.string(from: dueDate))"
     }
 }

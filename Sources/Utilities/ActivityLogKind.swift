@@ -41,6 +41,33 @@ enum ActivityLogKind: String, CaseIterable, Identifiable {
         }
     }
 
+    var padActionTitle: String {
+        switch self {
+        case .daily: "Record water test"
+        case .weekly: "Full water check"
+        case .maintenance: "Record maintenance"
+        case .usage: "Log hot-tub usage"
+        }
+    }
+
+    var padActionSubtitle: String {
+        switch self {
+        case .daily: "Log today's readings"
+        case .weekly: "Record all water readings"
+        case .maintenance: "Log cleaning or repairs"
+        case .usage: "Record people and duration"
+        }
+    }
+
+    var tileSystemImage: String {
+        switch self {
+        case .daily: "drop.fill"
+        case .weekly: "flask.fill"
+        case .maintenance: "wrench.fill"
+        case .usage: "person.2.fill"
+        }
+    }
+
     @ViewBuilder
     var formDestination: some View {
         switch self {

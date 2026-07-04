@@ -32,7 +32,12 @@ struct MaintenanceLogFormView: View {
     var body: some View {
         Form {
             Section {
-                DatePicker("Date & time", selection: $loggedAt, displayedComponents: [.date, .hourAndMinute])
+                DatePicker(
+                    "Date & time",
+                    selection: $loggedAt,
+                    in: ...FormValidation.latestLoggableMoment(),
+                    displayedComponents: [.date, .hourAndMinute]
+                )
             } header: {
                 Text("When")
             }

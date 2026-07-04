@@ -45,6 +45,13 @@ enum FormValidation {
         return eventDay > today
     }
 
+    /// Upper bound for log date pickers: end of today in the local calendar.
+    static func latestLoggableMoment() -> Date {
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: Date())
+        return cal.date(byAdding: DateComponents(day: 1, second: -1), to: startOfToday) ?? Date()
+    }
+
     static func validateDailyLog(
         loggedAt: Date,
         ph: String,

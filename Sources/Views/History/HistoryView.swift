@@ -13,6 +13,7 @@ struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
     @Environment(\.usePadLayout) private var usePadLayout
+    @Environment(\.isLandscape) private var isLandscape
 
     @Query(sort: \HotTubDailyLog.loggedAt, order: .reverse) private var dailyLogs: [HotTubDailyLog]
     @Query(sort: \WeeklyCheckLog.loggedAt, order: .reverse) private var weeklyLogs: [WeeklyCheckLog]
@@ -31,6 +32,17 @@ struct HistoryView: View {
 
     private var isBromine: Bool {
         settingsRows.first?.isBromine ?? false
+    }
+
+    private var allFiltersOn: Bool {
+        filterDaily && filterWeekly && filterMaintenance && filterUsage
+    }
+
+    private var allFiltersBinding: Binding<Bool> {
+        Binding(
+            get: { allFiltersOn },
+            set: { setAllFilters($0) }
+        )
     }
 
     private var combinedRows: [HistoryRow] {
@@ -67,13 +79,17 @@ struct HistoryView: View {
     }
 
     private var usesSplitLayout: Bool {
-        usePadLayout && isTabRoot
+        usePadLayout && isTabRoot && isLandscape
     }
 
     var body: some View {
         Group {
             if usesSplitLayout {
                 padSplitBody
+            } else if usePadLayout {
+                NavigationStack {
+                    compactBody
+                }
             } else {
                 compactBody
             }
@@ -84,6 +100,9 @@ struct HistoryView: View {
             syncSelectionWithRows()
         }
         .onChange(of: combinedRows.map(\.id)) { _, _ in
+            syncSelectionWithRows()
+        }
+        .onChange(of: isLandscape) { _, _ in
             syncSelectionWithRows()
         }
         .confirmationDialog("Delete this record?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -149,6 +168,7 @@ struct HistoryView: View {
     private var padFilterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: AppSpacing.control) {
+                AppFilterChip(title: "All", isOn: allFiltersBinding)
                 AppFilterChip(title: "Daily", isOn: $filterDaily)
                 AppFilterChip(title: "Weekly", isOn: $filterWeekly)
                 AppFilterChip(title: "Service", isOn: $filterMaintenance)
@@ -222,9 +242,8 @@ struct HistoryView: View {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 if isTabRoot {
                     historyHeader
-                }
-
-                if isFilterExpanded {
+                    filterChips
+                } else if isFilterExpanded {
                     filterChips
                 }
 
@@ -252,22 +271,16 @@ struct HistoryView: View {
     }
 
     private var historyHeader: some View {
-        HStack(alignment: .center) {
-            Text("History")
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(palette.color(.textPrimary))
-            Spacer(minLength: 12)
-            AppFilterToggleButton(isExpanded: isFilterExpanded) {
-                withAnimation(.spring(response: 0.35)) {
-                    isFilterExpanded.toggle()
-                }
-            }
-        }
+        Text("History")
+            .font(.largeTitle.weight(.bold))
+            .foregroundStyle(palette.color(.textPrimary))
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: AppSpacing.control) {
+                AppFilterChip(title: "All", isOn: allFiltersBinding)
                 AppFilterChip(title: "Daily", isOn: $filterDaily)
                 AppFilterChip(title: "Weekly", isOn: $filterWeekly)
                 AppFilterChip(title: "Service", isOn: $filterMaintenance)
@@ -343,6 +356,13 @@ struct HistoryView: View {
         if selectedRowID == deletedID {
             selectedRowID = combinedRows.first(where: { $0.id != deletedID })?.id
         }
+    }
+
+    private func setAllFilters(_ on: Bool) {
+        filterDaily = on
+        filterWeekly = on
+        filterMaintenance = on
+        filterUsage = on
     }
 
     private func syncSelectionWithRows() {

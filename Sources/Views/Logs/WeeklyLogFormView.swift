@@ -76,6 +76,7 @@ struct WeeklyLogFormView: View {
                     DatePicker(
                         "Date & time",
                         selection: $loggedAt,
+                        in: ...FormValidation.latestLoggableMoment(),
                         displayedComponents: [.date, .hourAndMinute]
                     )
                     .datePickerStyle(.compact)

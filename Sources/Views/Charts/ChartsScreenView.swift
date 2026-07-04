@@ -76,8 +76,18 @@ struct ChartsScreenView: View {
         Calendar.current.startOfDay(for: sevenDayWeekStart)
     }
 
-    private var last7DaysEnd: Date {
-        ChartsWeekCalendar.weekEnd(forWeekStarting: sevenDayWeekStart, cappedTo: todayStart)
+    /// Last day with data in the visible week (today for the current week, Sunday for past weeks).
+    private var last7DaysDataEnd: Date {
+        ChartsWeekCalendar.weekDataEnd(forWeekStarting: sevenDayWeekStart, cappedTo: todayStart)
+    }
+
+    /// Full Mon–Sun span shown on the week chart x-axis.
+    private var last7DaysChartEnd: Date {
+        ChartsWeekCalendar.weekSunday(forWeekStarting: sevenDayWeekStart)
+    }
+
+    private var isViewingCurrentWeek: Bool {
+        Calendar.current.isDate(sevenDayWeekStart, inSameDayAs: currentWeekMonday)
     }
 
     private var currentWeekMonday: Date {
@@ -98,8 +108,17 @@ struct ChartsScreenView: View {
         return cal.date(byAdding: .month, value: -2, to: anchor) ?? anchor
     }
 
-    private var threeMonthsEnd: Date {
+    private var threeMonthsDataEnd: Date {
         todayStart
+    }
+
+    /// End of the current month so all three month labels fit on narrow charts.
+    private var threeMonthsChartEnd: Date {
+        let cal = Calendar.current
+        guard let interval = cal.dateInterval(of: .month, for: todayStart),
+              let lastDay = cal.date(byAdding: .day, value: -1, to: interval.end)
+        else { return threeMonthsDataEnd }
+        return cal.startOfDay(for: lastDay)
     }
 
     private var threeMonthsLabel: String {
@@ -107,7 +126,7 @@ struct ChartsScreenView: View {
         startFormatter.dateFormat = "d MMM"
         let endFormatter = DateFormatter()
         endFormatter.dateFormat = "d MMM yyyy"
-        return "\(startFormatter.string(from: threeMonthsStart)) – \(endFormatter.string(from: threeMonthsEnd))"
+        return "\(startFormatter.string(from: threeMonthsStart)) – \(endFormatter.string(from: threeMonthsDataEnd))"
     }
 
     private var emptyStatePeriodTitle: String {
@@ -174,9 +193,10 @@ struct ChartsScreenView: View {
     }
 
     private var last7DaysLabel: String {
+        if isViewingCurrentWeek { return "this week" }
         let f = DateFormatter()
         f.dateFormat = "d MMM"
-        return "\(f.string(from: last7DaysStart)) – \(f.string(from: last7DaysEnd))"
+        return "\(f.string(from: last7DaysStart)) – \(f.string(from: last7DaysDataEnd))"
     }
 
     private func isInChartRange(_ date: Date) -> Bool {
@@ -184,11 +204,11 @@ struct ChartsScreenView: View {
         let day = cal.startOfDay(for: date)
         switch chartRange {
         case .last7Days:
-            return day >= last7DaysStart && day <= last7DaysEnd
+            return day >= last7DaysStart && day <= last7DaysDataEnd
         case .month:
             return cal.isDate(day, equalTo: viewMonth, toGranularity: .month)
         case .threeMonths:
-            return day >= threeMonthsStart && day <= threeMonthsEnd
+            return day >= threeMonthsStart && day <= threeMonthsDataEnd
         }
     }
 
@@ -196,7 +216,7 @@ struct ChartsScreenView: View {
         let cal = Calendar.current
         switch chartRange {
         case .last7Days:
-            return last7DaysStart ... last7DaysEnd
+            return last7DaysStart ... last7DaysChartEnd
         case .month:
             guard let interval = cal.dateInterval(of: .month, for: viewMonth) else {
                 let today = todayStart
@@ -205,7 +225,7 @@ struct ChartsScreenView: View {
             let monthEnd = cal.date(byAdding: .day, value: -1, to: interval.end) ?? interval.start
             return cal.startOfDay(for: interval.start) ... cal.startOfDay(for: monthEnd)
         case .threeMonths:
-            return threeMonthsStart ... threeMonthsEnd
+            return threeMonthsStart ... threeMonthsChartEnd
         }
     }
 
@@ -214,7 +234,7 @@ struct ChartsScreenView: View {
         let cal = Calendar.current
         var dates: [Date] = []
         var day = last7DaysStart
-        while day <= last7DaysEnd {
+        while day <= last7DaysChartEnd {
             dates.append(day)
             guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
             day = next
@@ -238,15 +258,15 @@ struct ChartsScreenView: View {
         return dates
     }
 
-    /// First of each month in the rolling 3-month window.
+    /// Mid-month anchors in the rolling 3-month window (keeps labels away from chart edges).
     private var threeMonthMarkDates: [Date] {
         let cal = Calendar.current
         var dates: [Date] = []
-        var month = threeMonthsStart
-        while month <= threeMonthsEnd {
-            dates.append(month)
-            guard let next = cal.date(byAdding: .month, value: 1, to: month) else { break }
-            month = next
+        var monthStart = threeMonthsStart
+        while monthStart <= threeMonthsChartEnd {
+            dates.append(cal.date(byAdding: .day, value: 14, to: monthStart) ?? monthStart)
+            guard let next = cal.date(byAdding: .month, value: 1, to: monthStart) else { break }
+            monthStart = next
         }
         return dates
     }
@@ -448,8 +468,6 @@ struct ChartsScreenView: View {
                 .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .appGroupedScreenBackground(palette)
-        .navigationTitle("Charts")
-        .navigationBarTitleDisplayMode(.large)
         .onAppear {
             HotTubModelContainer.seedIfNeeded(in: modelContext)
             clampChartRangeIfNeeded()
@@ -572,14 +590,14 @@ struct ChartsScreenView: View {
     private func chemistrySummarySection(_ summary: ChemistryPeriodSummary) -> some View {
         VStack(spacing: AppSpacing.control) {
             HStack(alignment: .top, spacing: AppSpacing.control) {
-                if summary.phReadingCount > 0, let percent = summary.phInRangePercent {
-                    phSummaryCard(percent: percent)
-                }
                 if summary.sanitizerReadingCount > 0 {
                     sanitizerSummaryCard(
                         lowCount: summary.sanitizerLowCount,
                         highCount: summary.sanitizerHighCount
                     )
+                }
+                if summary.phReadingCount > 0, let percent = summary.phInRangePercent {
+                    phSummaryCard(percent: percent)
                 }
             }
 
@@ -865,6 +883,9 @@ struct ChartsScreenView: View {
     }
 
     private func weekPickerLabel(for weekStart: Date) -> String {
+        if Calendar.current.isDate(weekStart, inSameDayAs: currentWeekMonday) {
+            return "This week"
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "d MMM"
         return "Week of \(formatter.string(from: weekStart))"
@@ -1182,9 +1203,12 @@ private enum ChartsWeekCalendar {
         return day
     }
 
-    static func weekEnd(forWeekStarting monday: Date, cappedTo today: Date) -> Date {
+    static func weekSunday(forWeekStarting monday: Date) -> Date {
         let cal = Calendar.current
-        let sunday = cal.date(byAdding: .day, value: 6, to: cal.startOfDay(for: monday)) ?? monday
-        return min(cal.startOfDay(for: sunday), today)
+        return cal.date(byAdding: .day, value: 6, to: cal.startOfDay(for: monday)) ?? monday
+    }
+
+    static func weekDataEnd(forWeekStarting monday: Date, cappedTo today: Date) -> Date {
+        min(weekSunday(forWeekStarting: monday), Calendar.current.startOfDay(for: today))
     }
 }

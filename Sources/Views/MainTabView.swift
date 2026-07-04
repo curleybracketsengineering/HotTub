@@ -20,6 +20,7 @@ struct MainTabView: View {
     var body: some View {
         GeometryReader { geometry in
             let usePadLayout = AppLayout.usePadLayout(availableWidth: geometry.size.width)
+            let isLandscape = AppLayout.isLandscape(size: geometry.size)
 
             Group {
                 if usePadLayout {
@@ -29,6 +30,7 @@ struct MainTabView: View {
                 }
             }
             .environment(\.usePadLayout, usePadLayout)
+            .environment(\.isLandscape, isLandscape)
         }
     }
 

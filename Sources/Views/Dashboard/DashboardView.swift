@@ -41,9 +41,21 @@ struct DashboardView: View {
                 Button {
                     Task { await handleBellTap() }
                 } label: {
-                    Image(systemName: "bell")
-                        .font(.body.weight(.semibold))
-                        .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bell")
+                            .font(.body.weight(.semibold))
+                            .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
+
+                        if usePadLayout, !viewModel.dueReminders.isEmpty {
+                            Text("\(min(viewModel.dueReminders.count, 9))")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(palette.color(.accentRed))
+                                .clipShape(Circle())
+                                .offset(x: 6, y: -4)
+                        }
+                    }
                 }
                 .accessibilityLabel("Notifications")
             }
@@ -95,28 +107,290 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
             statusCard
             actionsSection
-            recentRecords
+            recentRecords(limit: 3)
             remindersSection
         }
     }
 
     private var padDashboardContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
-            statusCard
-            actionsSection
+            padStatusBanner
+            padMainActionButton
+            padSecondaryActions
 
             HStack(alignment: .top, spacing: AppSpacing.section) {
-                recentRecords
+                padRecentRecordsColumn
                     .frame(maxWidth: .infinity, alignment: .leading)
                 padRemindersColumn
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            padFooter
+        }
+    }
+
+    // MARK: - iPad hero banner
+
+    private var padStatusBanner: some View {
+        let log = viewModel.latestDailyLog
+        let hasData = log != nil
+        let isStale = viewModel.readingsAreStale
+        let isDailyDue = log == nil || isStale
+        let inRange = isWithinTypicalRange(log)
+
+        return ZStack {
+            statusCardGradient(hasData: hasData, isStale: isStale || isDailyDue)
+
+            PadHeroWaveDecoration()
+                .opacity(0.18)
+
+            HStack(alignment: .top, spacing: AppSpacing.section) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "drop.fill")
+                            .font(.title2)
+                            .foregroundStyle(palette.color(.accentBlue))
+                            .frame(width: 48, height: 48)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(padHeroHeadline(isDailyDue: isDailyDue, hasData: hasData))
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(palette.color(.onAccent))
+
+                            if let log {
+                                Text("Last checked \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(palette.color(.onAccent).opacity(0.8))
+                            } else {
+                                Text("No readings logged yet")
+                                    .font(.subheadline)
+                                    .foregroundStyle(palette.color(.onAccent).opacity(0.8))
+                            }
+                        }
+                    }
+
+                    if hasData, inRange {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption)
+                            Text("Last result was within range")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(palette.color(.onAccent))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 16) {
+                    if isDailyDue {
+                        NavigationLink {
+                            DailyLogFormView()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "calendar")
+                                    .font(.caption.weight(.semibold))
+                                Text("Due today")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(palette.color(.accentBlue))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.white)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    HStack(alignment: .top, spacing: 24) {
+                        padHeroMetric(
+                            label: viewModel.isBromine ? "Bromine" : "Chlorine",
+                            value: sanitizerDisplay(log),
+                            ideal: sanitizerIdealLabel
+                        )
+                        padHeroMetric(
+                            label: "pH",
+                            value: log?.ph.map { String(format: "%.1f", $0) } ?? "--",
+                            ideal: "Ideal 7.2 – 7.8"
+                        )
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: AppSpacing.largeCardRadius, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+    }
+
+    private func padHeroHeadline(isDailyDue: Bool, hasData: Bool) -> String {
+        if !hasData { return "Check your water today" }
+        if isDailyDue { return "Water test due today" }
+        return "Water status looks good"
+    }
+
+    private func padHeroMetric(label: String, value: String, ideal: String) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(palette.color(.onAccent).opacity(0.75))
+            Text(value)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(palette.color(.onAccent))
+            Text(ideal)
+                .font(.caption2)
+                .foregroundStyle(palette.color(.onAccent).opacity(0.65))
+        }
+    }
+
+    private var sanitizerIdealLabel: String {
+        if viewModel.isBromine {
+            return "Ideal 3.0 – 5.0 ppm"
+        }
+        return "Ideal 1.0 – 3.0 ppm"
+    }
+
+    private var padMainActionButton: some View {
+        NavigationLink {
+            DailyLogFormView()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "drop.fill")
+                    .font(.title3)
+                Text("Record water test")
+                    .font(.headline)
+            }
+            .foregroundStyle(palette.color(.onAccent))
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 52)
+            .background(palette.color(.accentBlue))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var padSecondaryActions: some View {
+        HStack(spacing: AppSpacing.control) {
+            padActionCard(kind: .usage, destination: UsageLogFormView())
+            padActionCard(kind: .weekly, destination: WeeklyLogFormView())
+            padActionCard(kind: .maintenance, destination: MaintenanceLogFormView())
+        }
+    }
+
+    private func padActionCard<D: View>(kind: ActivityLogKind, destination: D) -> some View {
+        NavigationLink {
+            destination
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: kind.tileSystemImage)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(palette.color(kind.iconToken))
+                    .frame(width: 44, height: 44)
+                    .background(palette.color(kind.fillToken))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(kind.padActionTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.color(.textPrimary))
+                    Text(kind.padActionSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(palette.color(.textSecondary))
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.color(.textTertiary))
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - iPad columns
+
+    private var padRecentRecordsColumn: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.control) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Recent records")
+                    .font(.headline)
+                    .foregroundStyle(palette.color(.textPrimary))
+                Spacer()
+                NavigationLink("See all") {
+                    HistoryView(isTabRoot: false)
+                }
+                .font(.subheadline.weight(.medium))
+            }
+
+            if viewModel.recentRecords.isEmpty {
+                AppEmptyState(
+                    symbol: "clock.arrow.circlepath",
+                    title: "No records yet",
+                    message: "Log a daily reading or weekly check to see it here."
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.recentRecords.prefix(5).enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            AppSettingsDivider()
+                        }
+                        padCompactActivityLink(item)
+                    }
+                }
+                .appCard(palette: palette, padding: 0)
+
+                NavigationLink {
+                    HistoryView(isTabRoot: false)
+                } label: {
+                    Text("View all records")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(palette.color(.accentBlue))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func padCompactActivityLink(_ item: DashboardActivity) -> some View {
+        NavigationLink {
+            activityDetail(item)
+        } label: {
+            ActivityRowView(row: item.historyRow, isBromine: viewModel.isBromine, palette: palette)
+                .padding(12)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                viewModel.delete(item, context: modelContext)
+                Task { await notificationService.reschedule(context: modelContext) }
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
 
     private var padRemindersColumn: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
-            AppSectionHeader(title: "Reminders")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Reminders")
+                    .font(.headline)
+                    .foregroundStyle(palette.color(.textPrimary))
+                Spacer()
+                Button("Manage") {
+                    Task { await handleBellTap() }
+                }
+                .font(.subheadline.weight(.medium))
+            }
 
             if viewModel.dueReminders.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -133,11 +407,132 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .appCard(palette: palette)
             } else {
-                ForEach(viewModel.dueReminders) { reminder in
-                    reminderRow(reminder)
+                VStack(spacing: AppSpacing.control) {
+                    ForEach(viewModel.dueReminders) { reminder in
+                        padReminderCard(reminder)
+                    }
                 }
+
+                Button {
+                    Task { await handleBellTap() }
+                } label: {
+                    Text("View all reminders")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(palette.color(.accentBlue))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
         }
+    }
+
+    private func padReminderCard(_ reminder: HomeReminder) -> some View {
+        let urgency = reminder.urgency()
+        let colors = padReminderColors(for: urgency)
+
+        return NavigationLink {
+            reminderDestination(reminder.kind)
+        } label: {
+            HStack(spacing: AppSpacing.control) {
+                Image(systemName: "calendar")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(colors.icon)
+                    .frame(width: 40, height: 40)
+                    .background(colors.iconBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(reminder.padTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.color(.textPrimary))
+                    Text(reminder.padSubtitle())
+                        .font(.caption)
+                        .foregroundStyle(palette.color(.textSecondary))
+                }
+
+                Spacer(minLength: 8)
+
+                Text(reminder.badgeLabel())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(colors.badgeText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(colors.badgeBackground)
+                    .clipShape(Capsule())
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.color(.textTertiary))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
+                    .fill(colors.background)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
+                    .strokeBorder(colors.border.opacity(0.5), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private struct PadReminderColors {
+        let background: Color
+        let border: Color
+        let icon: Color
+        let iconBackground: Color
+        let badgeBackground: Color
+        let badgeText: Color
+    }
+
+    private func padReminderColors(for urgency: HomeReminder.Urgency) -> PadReminderColors {
+        switch urgency {
+        case .overdue:
+            return PadReminderColors(
+                background: palette.color(.statusErrorFill),
+                border: palette.color(.statusErrorBorder),
+                icon: palette.color(.accentRed),
+                iconBackground: palette.color(.statusErrorFill),
+                badgeBackground: palette.color(.accentRed).opacity(0.16),
+                badgeText: palette.color(.statusErrorText)
+            )
+        case .dueToday:
+            return PadReminderColors(
+                background: palette.color(.statusWarningFill),
+                border: palette.color(.statusWarningBorder),
+                icon: palette.color(.accentOrange),
+                iconBackground: palette.color(.statusWarningFill),
+                badgeBackground: palette.color(.accentOrange).opacity(0.16),
+                badgeText: palette.color(.statusWarningText)
+            )
+        case .upcoming:
+            return PadReminderColors(
+                background: palette.color(.accentYellow).opacity(0.12),
+                border: palette.color(.accentYellow).opacity(0.35),
+                icon: palette.color(.accentOrange),
+                iconBackground: palette.color(.accentYellow).opacity(0.2),
+                badgeBackground: palette.color(.accentYellow).opacity(0.25),
+                badgeText: palette.color(.textPrimary)
+            )
+        }
+    }
+
+    private var padFooter: some View {
+        HStack(alignment: .top) {
+            Text("Keep your water balanced for a safe and enjoyable soak.")
+                .font(.caption)
+                .foregroundStyle(palette.color(.textSecondary))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            PadFooterInfoLink(palette: palette)
+        }
+    }
+
+    private func isWithinTypicalRange(_ log: HotTubDailyLog?) -> Bool {
+        guard let log else { return false }
+        return !viewModel.phOutOfRange(log.ph) && !viewModel.sanitizerOutOfRange(log.primarySanitizerPpm)
     }
 
     private var statusCard: some View {
@@ -394,7 +789,7 @@ struct DashboardView: View {
         .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
     }
 
-    private var recentRecords: some View {
+    private func recentRecords(limit: Int) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             HStack(alignment: .firstTextBaseline) {
                 AppSectionHeader(title: "Recent records")
@@ -412,7 +807,7 @@ struct DashboardView: View {
                     message: "Log a daily reading or weekly check to see it here."
                 )
             } else {
-                ForEach(viewModel.recentRecords) { item in
+                ForEach(viewModel.recentRecords.prefix(limit)) { item in
                     activityRow(item)
                 }
             }
@@ -580,4 +975,49 @@ private struct NotificationSettingsSheet: View {
     }
     .modelContainer(HotTubModelContainer.preview)
     .appPalette(.light)
+}
+
+// MARK: - iPad dashboard decorations
+
+private struct PadHeroWaveDecoration: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Path { path in
+                let w = geometry.size.width
+                let h = geometry.size.height
+                path.move(to: CGPoint(x: 0, y: h * 0.72))
+                path.addCurve(
+                    to: CGPoint(x: w, y: h * 0.55),
+                    control1: CGPoint(x: w * 0.25, y: h * 0.95),
+                    control2: CGPoint(x: w * 0.72, y: h * 0.35)
+                )
+                path.addLine(to: CGPoint(x: w, y: h))
+                path.addLine(to: CGPoint(x: 0, y: h))
+                path.closeSubpath()
+            }
+            .fill(Color.white)
+        }
+    }
+}
+
+private struct PadFooterInfoLink: View {
+    let palette: AppPalette
+    @State private var isPresented = false
+
+    var body: some View {
+        Button("About water balance") {
+            isPresented = true
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(palette.color(.accentBlue))
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPresented) {
+            Text("Typical ranges are for reference only. Test your water and follow product labels before adding chemicals.")
+                .font(.footnote)
+                .foregroundStyle(palette.color(.textPrimary))
+                .padding(16)
+                .frame(maxWidth: 280)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
 }

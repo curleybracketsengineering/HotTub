@@ -94,7 +94,7 @@ final class DashboardViewModel: ObservableObject {
             if a.sortMoment != b.sortMoment { return a.sortMoment > b.sortMoment }
             return a.createdAtMoment > b.createdAtMoment
         }
-        recentRecords = Array(waterRecords.prefix(3))
+        recentRecords = Array(waterRecords.prefix(5))
 
         dueReminders = buildDueReminders(
             lastDaily: latestDailyLog?.loggedAt,
