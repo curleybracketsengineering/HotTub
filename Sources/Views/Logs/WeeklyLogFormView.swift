@@ -37,12 +37,10 @@ struct WeeklyLogFormView: View {
     @State private var foamPresent = false
     @State private var notes = ""
 
+    @State private var alertTitle = "Fix before saving"
     @State private var alertMessage: String?
     @State private var showAlert = false
     @State private var presentedHelp: HelpSheetRequest?
-    @State private var draftRecord: WeeklyCheckLog?
-    @State private var autoSaveScheduler = FormAutoSaveScheduler()
-    @State private var skipAutoSave = true
     @Query private var settingsRows: [AppSettings]
 
     init(existing: WeeklyCheckLog? = nil) {
@@ -196,13 +194,13 @@ struct WeeklyLogFormView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .appGroupedScreenBackground(palette)
-        .navigationTitle(existing == nil ? "Weekly check" : "Edit weekly check")
+        .navigationTitle(existing == nil ? "Full water check" : "Edit full water check")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { finish() }
             }
-            if activeRecord != nil {
+            if existing != nil {
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Delete", role: .destructive) { deleteLog() }
                 }
@@ -224,106 +222,12 @@ struct WeeklyLogFormView: View {
                 foamPresent = e.foamPresent
                 notes = e.notes ?? ""
             }
-            skipAutoSave = false
         }
-        .onChange(of: formSnapshot) { _, _ in scheduleAutoSave() }
-        .onDisappear {
-            autoSaveScheduler.flush { persistDraft() }
-            refreshReminders()
-            if existing == nil, let draft = draftRecord, isEmptyDraft(draft) {
-                modelContext.delete(draft)
-                try? modelContext.save()
-            }
-        }
-        .alert("Cannot save", isPresented: $showAlert) {
+        .alert(alertTitle, isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage ?? "")
         }
-    }
-
-    private var activeRecord: WeeklyCheckLog? {
-        existing ?? draftRecord
-    }
-
-    private var formSnapshot: WeeklyFormSnapshot {
-        WeeklyFormSnapshot(
-            loggedAt: loggedAt,
-            combined: combined,
-            total: total,
-            alkalinity: alkalinity,
-            copper: copper,
-            shock: shock,
-            shockType: shockType,
-            alkUp: alkUp,
-            waterClarity: waterClarity,
-            foamPresent: foamPresent,
-            notes: notes
-        )
-    }
-
-    private var hasDraftContent: Bool {
-        !combined.trimmingCharacters(in: .whitespaces).isEmpty
-            || !total.trimmingCharacters(in: .whitespaces).isEmpty
-            || !alkalinity.trimmingCharacters(in: .whitespaces).isEmpty
-            || !copper.trimmingCharacters(in: .whitespaces).isEmpty
-            || !shock.trimmingCharacters(in: .whitespaces).isEmpty
-            || !alkUp.trimmingCharacters(in: .whitespaces).isEmpty
-            || !notes.trimmingCharacters(in: .whitespaces).isEmpty
-            || !waterClarity.trimmingCharacters(in: .whitespaces).isEmpty
-            || foamPresent
-            || !shockType.isEmpty
-    }
-
-    private func scheduleAutoSave() {
-        guard !skipAutoSave else { return }
-        autoSaveScheduler.schedule { persistDraft() }
-    }
-
-    @discardableResult
-    private func persistDraft() -> Bool {
-        guard existing != nil || hasDraftContent else { return true }
-
-        let shockVal = FormFieldParsing.nonNegativeDouble(from: shock)
-        let combinedVal = FormFieldParsing.validatedOptionalDouble(from: combined, min: 0, max: 50)
-        let totalVal = FormFieldParsing.validatedOptionalDouble(from: total, min: 0, max: 50)
-        let alkalinityVal = FormFieldParsing.validatedOptionalDouble(from: alkalinity, min: 0, max: 300)
-        let copperVal = FormFieldParsing.validatedOptionalDouble(from: copper, min: 0, max: 5)
-
-        let record: WeeklyCheckLog
-        if let existing {
-            record = existing
-        } else if let draftRecord {
-            record = draftRecord
-        } else {
-            let log = WeeklyCheckLog(
-                loggedAt: loggedAt,
-                combinedChlorine: combinedVal,
-                sanitizerTotal: totalVal,
-                totalAlkalinity: alkalinityVal,
-                copper: copperVal,
-                shockAdded: shockVal,
-                shockType: shockType,
-                alkalinityUpAdded: FormFieldParsing.nonNegativeDouble(from: alkUp),
-                notes: notes.isEmpty ? nil : notes,
-                waterClarity: waterClarity.trimmingCharacters(in: .whitespaces),
-                foamPresent: foamPresent
-            )
-            modelContext.insert(log)
-            draftRecord = log
-            record = log
-        }
-
-        apply(
-            to: record,
-            shockVal: shockVal,
-            combinedVal: combinedVal,
-            totalVal: totalVal,
-            alkalinityVal: alkalinityVal,
-            copperVal: copperVal
-        )
-        try? modelContext.save()
-        return true
     }
 
     private func refreshReminders() {
@@ -346,14 +250,59 @@ struct WeeklyLogFormView: View {
             isBromine: isBromine
         )
         if !errs.isEmpty {
+            alertTitle = "Fix before saving"
             alertMessage = errs.joined(separator: "\n")
             showAlert = true
             return
         }
 
-        autoSaveScheduler.flush { persistDraft() }
+        guard commitSave() else { return }
         refreshReminders()
         dismiss()
+    }
+
+    @discardableResult
+    private func commitSave() -> Bool {
+        let shockVal = FormFieldParsing.nonNegativeDouble(from: shock)
+        let combinedVal = FormFieldParsing.validatedOptionalDouble(from: combined, min: 0, max: 50)
+        let totalVal = FormFieldParsing.validatedOptionalDouble(from: total, min: 0, max: 50)
+        let alkalinityVal = FormFieldParsing.validatedOptionalDouble(from: alkalinity, min: 0, max: 300)
+        let copperVal = FormFieldParsing.validatedOptionalDouble(from: copper, min: 0, max: 5)
+
+        do {
+            if let existing {
+                apply(
+                    to: existing,
+                    shockVal: shockVal,
+                    combinedVal: combinedVal,
+                    totalVal: totalVal,
+                    alkalinityVal: alkalinityVal,
+                    copperVal: copperVal
+                )
+            } else {
+                let log = WeeklyCheckLog(
+                    loggedAt: loggedAt,
+                    combinedChlorine: combinedVal,
+                    sanitizerTotal: totalVal,
+                    totalAlkalinity: alkalinityVal,
+                    copper: copperVal,
+                    shockAdded: shockVal,
+                    shockType: shockType,
+                    alkalinityUpAdded: FormFieldParsing.nonNegativeDouble(from: alkUp),
+                    notes: notes.isEmpty ? nil : notes,
+                    waterClarity: waterClarity.trimmingCharacters(in: .whitespaces),
+                    foamPresent: foamPresent
+                )
+                modelContext.insert(log)
+            }
+            try modelContext.save()
+            return true
+        } catch {
+            alertTitle = "Couldn't save"
+            alertMessage = "Please try again."
+            showAlert = true
+            return false
+        }
     }
 
     private func apply(
@@ -385,38 +334,11 @@ struct WeeklyLogFormView: View {
         record.notes = notes.isEmpty ? nil : notes
     }
 
-    private func isEmptyDraft(_ record: WeeklyCheckLog) -> Bool {
-        record.combinedChlorine == nil
-            && record.sanitizerTotal == nil
-            && record.totalAlkalinity == nil
-            && record.copper == nil
-            && (record.shockAdded ?? 0) == 0
-            && (record.alkalinityUpAdded ?? 0) == 0
-            && record.shockType.isEmpty
-            && record.waterClarity.isEmpty
-            && !record.foamPresent
-            && (record.notes?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
-    }
-
     private func deleteLog() {
-        guard let record = activeRecord else { return }
+        guard let record = existing else { return }
         modelContext.delete(record)
         try? modelContext.save()
         refreshReminders()
         dismiss()
     }
-}
-
-private struct WeeklyFormSnapshot: Equatable {
-    var loggedAt: Date
-    var combined: String
-    var total: String
-    var alkalinity: String
-    var copper: String
-    var shock: String
-    var shockType: String
-    var alkUp: String
-    var waterClarity: String
-    var foamPresent: Bool
-    var notes: String
 }

@@ -12,21 +12,22 @@ struct MaintenanceLogFormView: View {
     @Environment(\.dismiss) private var dismiss
 
     let existing: MaintenanceLogEntry?
+    let preset: MaintenanceLogPreset?
 
     @State private var loggedAt: Date = .now
     @State private var action = ""
     @State private var notes = ""
+    @State private var filterRinsed = false
     @State private var filterChanged = false
     @State private var waterChange = false
 
+    @State private var alertTitle = "Fix before saving"
     @State private var alertMessage: String?
     @State private var showAlert = false
-    @State private var draftRecord: MaintenanceLogEntry?
-    @State private var autoSaveScheduler = FormAutoSaveScheduler()
-    @State private var skipAutoSave = true
 
-    init(existing: MaintenanceLogEntry? = nil) {
+    init(existing: MaintenanceLogEntry? = nil, preset: MaintenanceLogPreset? = nil) {
         self.existing = existing
+        self.preset = preset
     }
 
     var body: some View {
@@ -51,8 +52,9 @@ struct MaintenanceLogFormView: View {
                 )
                 .lineLimit(2 ... 4)
                 .appFormFieldTextStyle(palette)
-                Toggle("Water change", isOn: $waterChange)
+                Toggle("Rinse filter", isOn: $filterRinsed)
                 Toggle("Filter changed", isOn: $filterChanged)
+                Toggle("Water change", isOn: $waterChange)
             } header: {
                 Text("Service")
             }
@@ -76,7 +78,7 @@ struct MaintenanceLogFormView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { finish() }
             }
-            if activeRecord != nil {
+            if existing != nil {
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Delete", role: .destructive) { deleteLog() }
                 }
@@ -88,93 +90,45 @@ struct MaintenanceLogFormView: View {
                 loggedAt = e.loggedAt
                 action = e.action
                 notes = e.notes
+                filterRinsed = e.filterRinsed
                 filterChanged = e.filterChanged
                 waterChange = e.waterChange
-            }
-            skipAutoSave = false
-        }
-        .onChange(of: formSnapshot) { _, _ in scheduleAutoSave() }
-        .onDisappear {
-            autoSaveScheduler.flush { persistDraft() }
-            if existing == nil, let draft = draftRecord, isEmptyDraft(draft) {
-                modelContext.delete(draft)
-                try? modelContext.save()
+            } else {
+                applyPreset()
             }
         }
-        .alert("Cannot save", isPresented: $showAlert) {
+        .alert(alertTitle, isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage ?? "")
         }
     }
 
-    private var activeRecord: MaintenanceLogEntry? {
-        existing ?? draftRecord
-    }
-
-    private var formSnapshot: MaintenanceFormSnapshot {
-        MaintenanceFormSnapshot(
-            loggedAt: loggedAt,
-            action: action,
-            notes: notes,
-            filterChanged: filterChanged,
-            waterChange: waterChange
-        )
-    }
-
-    private var hasDraftContent: Bool {
-        !action.trimmingCharacters(in: .whitespaces).isEmpty
-            || !notes.trimmingCharacters(in: .whitespaces).isEmpty
-            || filterChanged
-            || waterChange
+    private func applyPreset() {
+        guard let preset else { return }
+        switch preset {
+        case .filterRinse:
+            filterRinsed = true
+            if action.isEmpty { action = "Rinse filter" }
+        case .filterChange:
+            filterChanged = true
+            if action.isEmpty { action = "Filter changed" }
+        case .waterChange:
+            waterChange = true
+            if action.isEmpty { action = "Water change" }
+        }
     }
 
     private func resolvedAction() -> String {
         var finalAction = action.trimmingCharacters(in: .whitespaces)
         if finalAction.isEmpty {
             var parts: [String] = []
+            if filterRinsed { parts.append("Rinse filter") }
             if waterChange { parts.append("Water change") }
             if filterChanged { parts.append("Filter changed") }
             finalAction = parts.joined(separator: ", ")
         }
         return finalAction
-    }
-
-    private func scheduleAutoSave() {
-        guard !skipAutoSave else { return }
-        autoSaveScheduler.schedule { persistDraft() }
-    }
-
-    @discardableResult
-    private func persistDraft() -> Bool {
-        guard existing != nil || hasDraftContent else { return true }
-
-        let finalAction = resolvedAction()
-        let record: MaintenanceLogEntry
-        if let existing {
-            record = existing
-        } else if let draftRecord {
-            record = draftRecord
-        } else {
-            let log = MaintenanceLogEntry(
-                loggedAt: loggedAt,
-                action: finalAction,
-                notes: notes,
-                filterChanged: filterChanged,
-                waterChange: waterChange
-            )
-            modelContext.insert(log)
-            draftRecord = log
-            record = log
-        }
-
-        record.loggedAt = loggedAt
-        record.action = finalAction
-        record.notes = notes
-        record.filterChanged = filterChanged
-        record.waterChange = waterChange
-        try? modelContext.save()
-        return true
     }
 
     private func finish() {
@@ -183,37 +137,62 @@ struct MaintenanceLogFormView: View {
             loggedAt: loggedAt,
             action: finalAction,
             waterChange: waterChange,
-            filterChanged: filterChanged
+            filterChanged: filterChanged,
+            filterRinsed: filterRinsed
         )
         if !errs.isEmpty {
+            alertTitle = "Fix before saving"
             alertMessage = errs.joined(separator: "\n")
             showAlert = true
             return
         }
 
-        autoSaveScheduler.flush { persistDraft() }
+        guard commitSave(finalAction: finalAction) else { return }
+        refreshReminders()
         dismiss()
     }
 
-    private func isEmptyDraft(_ record: MaintenanceLogEntry) -> Bool {
-        record.action.trimmingCharacters(in: .whitespaces).isEmpty
-            && record.notes.trimmingCharacters(in: .whitespaces).isEmpty
-            && !record.filterChanged
-            && !record.waterChange
+    private func refreshReminders() {
+        guard !PreviewEnvironment.isActive else { return }
+        Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
+    }
+
+    @discardableResult
+    private func commitSave(finalAction: String) -> Bool {
+        do {
+            if let existing {
+                existing.loggedAt = loggedAt
+                existing.action = finalAction
+                existing.notes = notes
+                existing.filterRinsed = filterRinsed
+                existing.filterChanged = filterChanged
+                existing.waterChange = waterChange
+            } else {
+                let log = MaintenanceLogEntry(
+                    loggedAt: loggedAt,
+                    action: finalAction,
+                    notes: notes,
+                    filterRinsed: filterRinsed,
+                    filterChanged: filterChanged,
+                    waterChange: waterChange
+                )
+                modelContext.insert(log)
+            }
+            try modelContext.save()
+            return true
+        } catch {
+            alertTitle = "Couldn't save"
+            alertMessage = "Please try again."
+            showAlert = true
+            return false
+        }
     }
 
     private func deleteLog() {
-        guard let record = activeRecord else { return }
+        guard let record = existing else { return }
         modelContext.delete(record)
         try? modelContext.save()
+        refreshReminders()
         dismiss()
     }
-}
-
-private struct MaintenanceFormSnapshot: Equatable {
-    var loggedAt: Date
-    var action: String
-    var notes: String
-    var filterChanged: Bool
-    var waterChange: Bool
 }

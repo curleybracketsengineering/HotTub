@@ -20,6 +20,7 @@ struct DashboardView: View {
     @State private var showNotificationsDeniedAlert = false
     @State private var navigateToDailyLog = false
     @State private var navigateToWeeklyCheck = false
+    @State private var navigateToMaintenancePreset: MaintenanceLogPreset?
 
     var body: some View {
         ScrollView {
@@ -37,27 +38,8 @@ struct DashboardView: View {
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await handleBellTap() }
-                } label: {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "bell")
-                            .font(.body.weight(.semibold))
-                            .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
-
-                        if usePadLayout, !viewModel.dueReminders.isEmpty {
-                            Text("\(min(viewModel.dueReminders.count, 9))")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(minWidth: 16, minHeight: 16)
-                                .background(palette.color(.accentRed))
-                                .clipShape(Circle())
-                                .offset(x: 6, y: -4)
-                        }
-                    }
-                }
-                .accessibilityLabel("Notifications")
+            ToolbarItem(placement: usePadLayout ? .topBarLeading : .topBarTrailing) {
+                notificationBellButton
             }
         }
         .task {
@@ -83,13 +65,16 @@ struct DashboardView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Turn on notifications in Settings to get water test reminders.")
+            Text("Turn on notifications in Settings to get maintenance reminders.")
         }
         .navigationDestination(isPresented: $navigateToDailyLog) {
             DailyLogFormView()
         }
         .navigationDestination(isPresented: $navigateToWeeklyCheck) {
             WeeklyLogFormView()
+        }
+        .navigationDestination(item: $navigateToMaintenancePreset) { preset in
+            MaintenanceLogFormView(preset: preset)
         }
         .onChange(of: notificationService.pendingDestination) { _, destination in
             guard let destination else { return }
@@ -98,6 +83,12 @@ struct DashboardView: View {
                 navigateToDailyLog = true
             case .weeklyCheck:
                 navigateToWeeklyCheck = true
+            case .maintenanceFilterRinse:
+                navigateToMaintenancePreset = .filterRinse
+            case .maintenanceFilterChange:
+                navigateToMaintenancePreset = .filterChange
+            case .maintenanceWaterChange:
+                navigateToMaintenancePreset = .waterChange
             }
             notificationService.pendingDestination = nil
         }
@@ -107,7 +98,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
             statusCard
             actionsSection
-            recentRecords(limit: 3)
+            recentRecordsSection
             remindersSection
         }
     }
@@ -137,14 +128,24 @@ struct DashboardView: View {
         let isStale = viewModel.readingsAreStale
         let isDailyDue = log == nil || isStale
         let inRange = isWithinTypicalRange(log)
+        let sanitizerIdeal = viewModel.isBromine
+            ? WaterChemistryRanges.bromineIdeal
+            : WaterChemistryRanges.chlorineIdeal
+        let sanitizerDisplayRange = viewModel.isBromine
+            ? WaterChemistryRanges.bromineDisplay
+            : WaterChemistryRanges.chlorineDisplay
 
         return ZStack {
-            statusCardGradient(hasData: hasData, isStale: isStale || isDailyDue)
+            statusCardGradient(
+                hasData: hasData,
+                isStale: isStale || isDailyDue,
+                inRange: inRange
+            )
 
             PadHeroWaveDecoration()
                 .opacity(0.18)
 
-            HStack(alignment: .top, spacing: AppSpacing.section) {
+            HStack(alignment: .center, spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 12) {
                         Image(systemName: "drop.fill")
@@ -155,12 +156,19 @@ struct DashboardView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(padHeroHeadline(isDailyDue: isDailyDue, hasData: hasData))
-                                .font(.title2.weight(.bold))
-                                .foregroundStyle(palette.color(.onAccent))
+                            Text(
+                                viewModel.heroHeadline(
+                                    ph: log?.ph,
+                                    sanitizer: log?.primarySanitizerPpm,
+                                    hasData: hasData,
+                                    isDailyDue: isDailyDue
+                                )
+                            )
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(palette.color(.onAccent))
 
                             if let log {
-                                Text("Last checked \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
+                                Text("Last water test \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
                                     .font(.subheadline)
                                     .foregroundStyle(palette.color(.onAccent).opacity(0.8))
                             } else {
@@ -171,23 +179,6 @@ struct DashboardView: View {
                         }
                     }
 
-                    if hasData, inRange {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                            Text("Last result was within range")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .foregroundStyle(palette.color(.onAccent))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.2))
-                        .clipShape(Capsule())
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(alignment: .trailing, spacing: 16) {
                     if isDailyDue {
                         NavigationLink {
                             DailyLogFormView()
@@ -205,21 +196,42 @@ struct DashboardView: View {
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                    }
-
-                    HStack(alignment: .top, spacing: 24) {
-                        padHeroMetric(
-                            label: viewModel.isBromine ? "Bromine" : "Chlorine",
-                            value: sanitizerDisplay(log),
-                            ideal: sanitizerIdealLabel
-                        )
-                        padHeroMetric(
-                            label: "pH",
-                            value: log?.ph.map { String(format: "%.1f", $0) } ?? "--",
-                            ideal: "Ideal 7.2 – 7.8"
-                        )
+                    } else if hasData {
+                        padHeroStatusBadge(inRange: inRange)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 16)
+
+                padHeroDivider
+
+                padHeroReadingColumn(
+                    label: viewModel.isBromine ? "Bromine" : "Chlorine",
+                    value: log?.primarySanitizerPpm,
+                    valueText: sanitizerDisplay(log),
+                    targetLabel: sanitizerTargetLabel,
+                    idealRange: sanitizerIdeal,
+                    displayRange: sanitizerDisplayRange,
+                    status: log?.primarySanitizerPpm.map {
+                        viewModel.isBromine
+                            ? WaterChemistryRanges.bromineStatus($0)
+                            : WaterChemistryRanges.chlorineStatus($0)
+                    }
+                )
+                .padding(.horizontal, 16)
+
+                padHeroDivider
+
+                padHeroReadingColumn(
+                    label: "pH",
+                    value: log?.ph,
+                    valueText: log?.ph.map { String(format: "%.1f", $0) } ?? "--",
+                    targetLabel: "Target: 7.2 – 7.8",
+                    idealRange: WaterChemistryRanges.phIdeal,
+                    displayRange: WaterChemistryRanges.phDisplay,
+                    status: log?.ph.map(WaterChemistryRanges.phStatus)
+                )
+                .padding(.leading, 16)
             }
             .padding(24)
         }
@@ -227,31 +239,66 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
     }
 
-    private func padHeroHeadline(isDailyDue: Bool, hasData: Bool) -> String {
-        if !hasData { return "Check your water today" }
-        if isDailyDue { return "Water test due today" }
-        return "Water status looks good"
+    private var padHeroDivider: some View {
+        Rectangle()
+            .fill(palette.color(.onAccent).opacity(0.22))
+            .frame(width: 1)
+            .frame(maxHeight: 88)
     }
 
-    private func padHeroMetric(label: String, value: String, ideal: String) -> some View {
-        VStack(alignment: .trailing, spacing: 4) {
+    @ViewBuilder
+    private func padHeroStatusBadge(inRange: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: inRange ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .font(.caption)
+            Text(inRange ? "Last result was within range" : "Some readings outside range")
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(palette.color(.onAccent))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(inRange ? 0.2 : 0.16))
+        .clipShape(Capsule())
+    }
+
+    private func padHeroReadingColumn(
+        label: String,
+        value: Double?,
+        valueText: String,
+        targetLabel: String,
+        idealRange: ClosedRange<Double>,
+        displayRange: ClosedRange<Double>,
+        status: WaterChemistryReadingStatus?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(palette.color(.onAccent).opacity(0.75))
-            Text(value)
+
+            Text(valueText)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(palette.color(.onAccent))
-            Text(ideal)
+
+            Text(targetLabel)
                 .font(.caption2)
                 .foregroundStyle(palette.color(.onAccent).opacity(0.65))
+
+            ChemistryRangeGauge(
+                value: value,
+                idealRange: idealRange,
+                displayRange: displayRange,
+                status: status
+            )
+            .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var sanitizerIdealLabel: String {
+    private var sanitizerTargetLabel: String {
         if viewModel.isBromine {
-            return "Ideal 3.0 – 5.0 ppm"
+            return "Target: 3.0 – 5.0 ppm"
         }
-        return "Ideal 1.0 – 3.0 ppm"
+        return "Target: 1.0 – 3.0 ppm"
     }
 
     private var padMainActionButton: some View {
@@ -325,7 +372,7 @@ struct DashboardView: View {
                     .font(.headline)
                     .foregroundStyle(palette.color(.textPrimary))
                 Spacer()
-                NavigationLink("See all") {
+                NavigationLink("View all records") {
                     HistoryView(isTabRoot: false)
                 }
                 .font(.subheadline.weight(.medium))
@@ -339,7 +386,7 @@ struct DashboardView: View {
                 )
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(viewModel.recentRecords.prefix(5).enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(viewModel.recentRecords.enumerated()), id: \.element.id) { index, item in
                         if index > 0 {
                             AppSettingsDivider()
                         }
@@ -380,16 +427,22 @@ struct DashboardView: View {
     }
 
     private var padRemindersColumn: some View {
+        remindersCard
+    }
+
+    private var remindersCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Reminders")
                     .font(.headline)
                     .foregroundStyle(palette.color(.textPrimary))
                 Spacer()
-                Button("Manage") {
-                    Task { await handleBellTap() }
+                NavigationLink {
+                    SetupView()
+                } label: {
+                    Text("Manage")
+                        .font(.subheadline.weight(.medium))
                 }
-                .font(.subheadline.weight(.medium))
             }
 
             if viewModel.dueReminders.isEmpty {
@@ -400,7 +453,7 @@ struct DashboardView: View {
                     Text("All caught up")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.color(.textPrimary))
-                    Text("No water tests or weekly checks due right now.")
+                    Text("No maintenance tasks due in the next two weeks.")
                         .font(.caption)
                         .foregroundStyle(palette.color(.textSecondary))
                 }
@@ -409,32 +462,22 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: AppSpacing.control) {
                     ForEach(viewModel.dueReminders) { reminder in
-                        padReminderCard(reminder)
+                        reminderCard(reminder)
                     }
                 }
-
-                Button {
-                    Task { await handleBellTap() }
-                } label: {
-                    Text("View all reminders")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(palette.color(.accentBlue))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
             }
         }
     }
 
-    private func padReminderCard(_ reminder: HomeReminder) -> some View {
+    private func reminderCard(_ reminder: HomeReminder) -> some View {
         let urgency = reminder.urgency()
-        let colors = padReminderColors(for: urgency)
+        let colors = reminderColors(for: urgency)
 
         return NavigationLink {
             reminderDestination(reminder.kind)
         } label: {
             HStack(spacing: AppSpacing.control) {
-                Image(systemName: "calendar")
+                Image(systemName: reminder.kind.systemImage(urgency: urgency))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(colors.icon)
                     .frame(width: 40, height: 40)
@@ -442,7 +485,7 @@ struct DashboardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(reminder.padTitle)
+                    Text(reminder.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.color(.textPrimary))
                     Text(reminder.padSubtitle())
@@ -478,7 +521,7 @@ struct DashboardView: View {
         .buttonStyle(.plain)
     }
 
-    private struct PadReminderColors {
+    private struct ReminderCardColors {
         let background: Color
         let border: Color
         let icon: Color
@@ -487,10 +530,10 @@ struct DashboardView: View {
         let badgeText: Color
     }
 
-    private func padReminderColors(for urgency: HomeReminder.Urgency) -> PadReminderColors {
+    private func reminderColors(for urgency: HomeReminder.Urgency) -> ReminderCardColors {
         switch urgency {
         case .overdue:
-            return PadReminderColors(
+            return ReminderCardColors(
                 background: palette.color(.statusErrorFill),
                 border: palette.color(.statusErrorBorder),
                 icon: palette.color(.accentRed),
@@ -499,7 +542,7 @@ struct DashboardView: View {
                 badgeText: palette.color(.statusErrorText)
             )
         case .dueToday:
-            return PadReminderColors(
+            return ReminderCardColors(
                 background: palette.color(.statusWarningFill),
                 border: palette.color(.statusWarningBorder),
                 icon: palette.color(.accentOrange),
@@ -508,13 +551,13 @@ struct DashboardView: View {
                 badgeText: palette.color(.statusWarningText)
             )
         case .upcoming:
-            return PadReminderColors(
-                background: palette.color(.accentYellow).opacity(0.12),
-                border: palette.color(.accentYellow).opacity(0.35),
-                icon: palette.color(.accentOrange),
-                iconBackground: palette.color(.accentYellow).opacity(0.2),
-                badgeBackground: palette.color(.accentYellow).opacity(0.25),
-                badgeText: palette.color(.textPrimary)
+            return ReminderCardColors(
+                background: palette.color(.accentBlue).opacity(0.08),
+                border: palette.color(.accentBlue).opacity(0.25),
+                icon: palette.color(.accentBlue),
+                iconBackground: palette.color(.accentBlue).opacity(0.12),
+                badgeBackground: palette.color(.accentBlue).opacity(0.12),
+                badgeText: palette.color(.accentBlue)
             )
         }
     }
@@ -539,7 +582,8 @@ struct DashboardView: View {
         let log = viewModel.latestDailyLog
         let hasData = log != nil
         let isStale = viewModel.readingsAreStale
-        let gradient = statusCardGradient(hasData: hasData, isStale: isStale)
+        let inRange = isWithinTypicalRange(log)
+        let gradient = statusCardGradient(hasData: hasData, isStale: isStale, inRange: inRange)
 
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -553,7 +597,7 @@ struct DashboardView: View {
                 Spacer()
 
                 if hasData, !isStale, let log {
-                    Text("Last checked: \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
+                    Text("Last water test: \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(palette.color(.onAccent))
                         .padding(.horizontal, 12)
@@ -576,7 +620,7 @@ struct DashboardView: View {
         .animation(.spring(response: 0.35), value: isStale)
     }
 
-    private func statusCardGradient(hasData: Bool, isStale: Bool) -> LinearGradient {
+    private func statusCardGradient(hasData: Bool, isStale: Bool, inRange: Bool = true) -> LinearGradient {
         let colors: [Color]
         if !hasData {
             colors = [palette.color(.heroEmptyStart), palette.color(.heroEmptyEnd)]
@@ -585,10 +629,15 @@ struct DashboardView: View {
                 palette.color(.heroEmptyStart),
                 palette.color(.heroEmptyEnd).opacity(0.88),
             ]
-        } else {
+        } else if inRange {
             colors = [
                 palette.color(.accentBlue),
                 palette.color(.accentIndigo).opacity(0.92),
+            ]
+        } else {
+            colors = [
+                palette.color(.accentIndigo),
+                palette.color(.accentBlue).opacity(0.88),
             ]
         }
         return LinearGradient(
@@ -607,7 +656,12 @@ struct DashboardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(
                 log.map {
-                    viewModel.statusSummary(ph: $0.ph, sanitizer: $0.primarySanitizerPpm)
+                    viewModel.heroHeadline(
+                        ph: $0.ph,
+                        sanitizer: $0.primarySanitizerPpm,
+                        hasData: true,
+                        isDailyDue: false
+                    )
                 } ?? "Ready to start?"
             )
             .font(.system(size: 28, weight: .heavy))
@@ -637,7 +691,7 @@ struct DashboardView: View {
                 .foregroundStyle(palette.color(.onAccent))
 
             if let log {
-                Text("Last checked \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
+                Text("Last water test \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(palette.color(.onAccent).opacity(0.75))
             }
@@ -740,7 +794,7 @@ struct DashboardView: View {
                 WeeklyLogFormView()
             } label: {
                 subActionTile(
-                    title: "Weekly water check",
+                    title: "Full water check",
                     systemImage: ActivityLogKind.weekly.systemImage,
                     fillToken: ActivityLogKind.weekly.fillToken,
                     iconToken: ActivityLogKind.weekly.iconToken
@@ -789,12 +843,12 @@ struct DashboardView: View {
         .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
     }
 
-    private func recentRecords(limit: Int) -> some View {
+    private var recentRecordsSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
             HStack(alignment: .firstTextBaseline) {
                 AppSectionHeader(title: "Recent records")
                 Spacer()
-                NavigationLink("See all") {
+                NavigationLink("View all records") {
                     HistoryView(isTabRoot: false)
                 }
                 .font(.subheadline.weight(.medium))
@@ -807,7 +861,7 @@ struct DashboardView: View {
                     message: "Log a daily reading or weekly check to see it here."
                 )
             } else {
-                ForEach(viewModel.recentRecords.prefix(limit)) { item in
+                ForEach(viewModel.recentRecords) { item in
                     activityRow(item)
                 }
             }
@@ -816,56 +870,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var remindersSection: some View {
-        if !viewModel.dueReminders.isEmpty {
-            VStack(alignment: .leading, spacing: AppSpacing.control) {
-                AppSectionHeader(title: "Reminders")
-
-                ForEach(viewModel.dueReminders) { reminder in
-                    reminderRow(reminder)
-                }
-            }
-        }
-    }
-
-    private func reminderRow(_ reminder: HomeReminder) -> some View {
-        NavigationLink {
-            reminderDestination(reminder.kind)
-        } label: {
-            HStack(spacing: AppSpacing.control) {
-                Image(systemName: "calendar")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(palette.color(.accentOrange))
-                    .frame(width: 40, height: 40)
-                    .background(palette.color(.statusWarningFill))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(reminder.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(palette.color(.textPrimary))
-                    Text(reminder.dueSubtitle())
-                        .font(.caption)
-                        .foregroundStyle(palette.color(.textSecondary))
-                }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.color(.textTertiary))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
-                    .fill(palette.color(.statusWarningFill))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
-                    .strokeBorder(palette.color(.statusWarningBorder).opacity(0.5), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
+        remindersCard
     }
 
     @ViewBuilder
@@ -875,6 +880,12 @@ struct DashboardView: View {
             DailyLogFormView()
         case .weeklyWaterCheck:
             WeeklyLogFormView()
+        case .filterRinse:
+            MaintenanceLogFormView(preset: .filterRinse)
+        case .filterChange:
+            MaintenanceLogFormView(preset: .filterChange)
+        case .waterChange:
+            MaintenanceLogFormView(preset: .waterChange)
         }
     }
 
@@ -910,6 +921,28 @@ struct DashboardView: View {
         }
     }
 
+    private var notificationBellButton: some View {
+        Button {
+            Task { await handleBellTap() }
+        } label: {
+            Image(systemName: "bell")
+                .font(.body.weight(.semibold))
+                .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
+                .overlay(alignment: .topTrailing) {
+                    if !viewModel.dueReminders.isEmpty {
+                        Text("\(min(viewModel.dueReminders.count, 9))")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(palette.color(.accentRed))
+                            .clipShape(Circle())
+                            .offset(x: 4, y: -4)
+                    }
+                }
+        }
+        .accessibilityLabel("Notifications")
+    }
+
     private func handleBellTap() async {
         await notificationService.refreshAuthorizationStatus()
         switch notificationService.authorizationStatus {
@@ -940,7 +973,7 @@ private struct NotificationSettingsSheet: View {
                         set: { notificationService.remindersEnabled = $0 }
                     ))
                 } footer: {
-                    Text("Get reminded when a daily test or weekly check is due.")
+                    Text("Get reminded when a scheduled maintenance task is due.")
                 }
 
                 if notificationService.remindersEnabled {

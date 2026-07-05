@@ -11,6 +11,9 @@ import UserNotifications
 enum ReminderNotificationDestination: String, Equatable {
     case dailyLog
     case weeklyCheck
+    case maintenanceFilterRinse
+    case maintenanceFilterChange
+    case maintenanceWaterChange
 }
 
 @MainActor
@@ -20,6 +23,13 @@ final class ReminderNotificationService: NSObject, ObservableObject {
     private enum Identifier {
         static let daily = "hot-tub.daily"
         static let weekly = "hot-tub.weekly"
+        static let filterRinse = "hot-tub.filter-rinse"
+        static let filterChange = "hot-tub.filter-change"
+        static let waterChange = "hot-tub.water-change"
+
+        static var all: [String] {
+            [daily, weekly, filterRinse, filterChange, waterChange]
+        }
     }
 
     private enum StorageKey {
@@ -117,10 +127,25 @@ final class ReminderNotificationService: NSObject, ObservableObject {
 
         let daily = (try? context.fetch(FetchDescriptor<HotTubDailyLog>())) ?? []
         let weekly = (try? context.fetch(FetchDescriptor<WeeklyCheckLog>())) ?? []
+        let maintenance = (try? context.fetch(FetchDescriptor<MaintenanceLogEntry>())) ?? []
+        let settingsList = (try? context.fetch(FetchDescriptor<AppSettings>())) ?? []
+        let settings = settingsList.first
+
         let lastDaily = daily.sorted { $0.loggedAt > $1.loggedAt }.first?.loggedAt
         let lastWeekly = weekly.sorted { $0.loggedAt > $1.loggedAt }.first?.loggedAt
+        let sortedMaintenance = maintenance.sorted { $0.loggedAt > $1.loggedAt }
+        let lastFilterRinse = sortedMaintenance.first(where: \.filterRinsed)?.loggedAt
+        let lastFilterChange = sortedMaintenance.first(where: \.filterChanged)?.loggedAt
+        let lastWaterChange = sortedMaintenance.first(where: \.waterChange)?.loggedAt
 
-        await scheduleNotifications(lastDaily: lastDaily, lastWeekly: lastWeekly)
+        await scheduleNotifications(
+            settings: settings,
+            lastDaily: lastDaily,
+            lastWeekly: lastWeekly,
+            lastFilterRinse: lastFilterRinse,
+            lastFilterChange: lastFilterChange,
+            lastWaterChange: lastWaterChange
+        )
     }
 
     func rescheduleFromSharedContainer() async {
@@ -129,16 +154,26 @@ final class ReminderNotificationService: NSObject, ObservableObject {
         await reschedule(context: context)
     }
 
-    private func scheduleNotifications(lastDaily: Date?, lastWeekly: Date?) async {
+    private func scheduleNotifications(
+        settings: AppSettings?,
+        lastDaily: Date?,
+        lastWeekly: Date?,
+        lastFilterRinse: Date?,
+        lastFilterChange: Date?,
+        lastWaterChange: Date?
+    ) async {
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [Identifier.daily, Identifier.weekly])
+        center.removePendingNotificationRequests(withIdentifiers: Identifier.all)
 
-        if ReminderSchedule.isDailyDue(lastLog: lastDaily) {
-            let dueDate = ReminderSchedule.dailyDueDate(after: lastDaily)
+        guard let settings else { return }
+
+        if settings.reminderWaterTestEnabled,
+           ReminderSchedule.isPastDue(last: lastDaily, intervalDays: settings.reminderWaterTestDays) {
+            let dueDate = ReminderSchedule.dueDate(after: lastDaily, intervalDays: settings.reminderWaterTestDays)
             if let triggerDate = nextFireDate(onOrAfter: dueDate) {
                 await addRequest(
                     identifier: Identifier.daily,
-                    title: "Daily water test",
+                    title: "Water test",
                     body: "Record today's water readings to keep your hot tub on track.",
                     destination: .dailyLog,
                     fireDate: triggerDate
@@ -146,14 +181,57 @@ final class ReminderNotificationService: NSObject, ObservableObject {
             }
         }
 
-        if ReminderSchedule.isWeeklyDue(lastCheck: lastWeekly) {
-            let dueDate = ReminderSchedule.weeklyDueDate(after: lastWeekly)
+        if settings.reminderWeeklyCheckEnabled,
+           ReminderSchedule.isPastDue(last: lastWeekly, intervalDays: settings.reminderWeeklyCheckDays) {
+            let dueDate = ReminderSchedule.dueDate(after: lastWeekly, intervalDays: settings.reminderWeeklyCheckDays)
             if let triggerDate = nextFireDate(onOrAfter: dueDate) {
                 await addRequest(
                     identifier: Identifier.weekly,
-                    title: "Weekly water check",
+                    title: "Full water check",
                     body: "Time for a full weekly check of your hot tub water.",
                     destination: .weeklyCheck,
+                    fireDate: triggerDate
+                )
+            }
+        }
+
+        if settings.reminderFilterRinseEnabled,
+           ReminderSchedule.isPastDue(last: lastFilterRinse, intervalDays: settings.reminderFilterRinseDays) {
+            let dueDate = ReminderSchedule.dueDate(after: lastFilterRinse, intervalDays: settings.reminderFilterRinseDays)
+            if let triggerDate = nextFireDate(onOrAfter: dueDate) {
+                await addRequest(
+                    identifier: Identifier.filterRinse,
+                    title: "Rinse filter",
+                    body: "Rinse your filter to keep water flowing cleanly.",
+                    destination: .maintenanceFilterRinse,
+                    fireDate: triggerDate
+                )
+            }
+        }
+
+        if settings.reminderFilterChangeEnabled,
+           ReminderSchedule.isPastDue(last: lastFilterChange, intervalMonths: settings.reminderFilterChangeMonths) {
+            let dueDate = ReminderSchedule.dueDate(after: lastFilterChange, intervalMonths: settings.reminderFilterChangeMonths)
+            if let triggerDate = nextFireDate(onOrAfter: dueDate) {
+                await addRequest(
+                    identifier: Identifier.filterChange,
+                    title: "Change filter",
+                    body: "Your filter cartridge may be due for replacement.",
+                    destination: .maintenanceFilterChange,
+                    fireDate: triggerDate
+                )
+            }
+        }
+
+        if settings.reminderWaterChangeEnabled,
+           ReminderSchedule.isPastDue(last: lastWaterChange, intervalDays: settings.reminderWaterChangeDays) {
+            let dueDate = ReminderSchedule.dueDate(after: lastWaterChange, intervalDays: settings.reminderWaterChangeDays)
+            if let triggerDate = nextFireDate(onOrAfter: dueDate) {
+                await addRequest(
+                    identifier: Identifier.waterChange,
+                    title: "Water change",
+                    body: "Consider draining and refilling your hot tub.",
+                    destination: .maintenanceWaterChange,
                     fireDate: triggerDate
                 )
             }
@@ -200,7 +278,7 @@ final class ReminderNotificationService: NSObject, ObservableObject {
     private func cancelAll() {
         guard !PreviewEnvironment.isActive else { return }
         UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: [Identifier.daily, Identifier.weekly]
+            withIdentifiers: Identifier.all
         )
     }
 }

@@ -202,7 +202,7 @@ enum HotTubCSVService {
             }
 
             let fields = fieldMap(from: row, columnIndex: columnIndex)
-            let type = normalizedType(fields["type"]) ?? defaultType
+            let type = resolveRowType(fields: fields, columnIndex: columnIndex, defaultType: defaultType)
 
             if type == "settings" {
                 if applySettings(from: fields, in: context) {
@@ -315,6 +315,7 @@ enum HotTubCSVService {
             "type": "maintenance",
             "logged_at": exportDateFormatter.string(from: log.loggedAt),
             "action": log.action,
+            "filter_rinsed": log.filterRinsed ? "true" : "false",
             "filter_changed": log.filterChanged ? "true" : "false",
             "water_change": log.waterChange ? "true" : "false",
         ]
@@ -377,6 +378,7 @@ enum HotTubCSVService {
             loggedAt: loggedAt,
             action: fields["action"]?.trimmingCharacters(in: .whitespaces) ?? "",
             notes: fields["notes"]?.trimmingCharacters(in: .whitespaces) ?? "",
+            filterRinsed: parseBool(fields["filter_rinsed"]) ?? false,
             filterChanged: parseBool(fields["filter_changed"]) ?? false,
             waterChange: parseBool(fields["water_change"]) ?? false
         )
@@ -560,9 +562,49 @@ enum HotTubCSVService {
     private static func inferDefaultType(from columnIndex: [String: Int]) -> String {
         if columnIndex["type"] != nil { return "daily" }
         if columnIndex["action"] != nil || columnIndex["filter_changed"] != nil { return "maintenance" }
-        if columnIndex["num_users"] != nil || columnIndex["duration_minutes"] != nil { return "usage" }
         if columnIndex["total_alkalinity"] != nil || columnIndex["water_clarity"] != nil { return "weekly" }
+        if columnIndex["ph"] != nil || columnIndex["sanitizer_free"] != nil || columnIndex["sanitizer_combined"] != nil {
+            return "daily"
+        }
+        if columnIndex["num_users"] != nil || columnIndex["duration_minutes"] != nil { return "usage" }
         return "daily"
+    }
+
+    /// Per-row type when the `type` column is missing or empty.
+    /// Prefers water-test rows over usage when chemistry fields are populated — avoids
+    /// mis-importing spreadsheets that reuse the full export header with ppm in wrong columns.
+    private static func resolveRowType(
+        fields: [String: String],
+        columnIndex: [String: Int],
+        defaultType: String
+    ) -> String {
+        if let explicit = normalizedType(fields["type"]) { return explicit }
+
+        let hasDaily = fields["ph"] != nil
+            || fields["sanitizer_free"] != nil
+            || fields["sanitizer_combined"] != nil
+            || fields["added_sanitizer"] != nil
+            || fields["added_ph_up"] != nil
+            || fields["added_ph_down"] != nil
+        let hasWeekly = fields["total_alkalinity"] != nil
+            || fields["water_clarity"] != nil
+            || fields["combined_chlorine"] != nil
+            || fields["sanitizer_total"] != nil
+        let hasMaintenance = fields["action"] != nil
+            || fields["filter_changed"] != nil
+            || fields["water_change"] != nil
+            || fields["filter_rinsed"] != nil
+        let hasUsage = fields["num_users"] != nil || fields["duration_minutes"] != nil
+
+        if hasDaily && !hasUsage { return "daily" }
+        if hasWeekly && !hasUsage { return "weekly" }
+        if hasMaintenance && !hasDaily && !hasWeekly && !hasUsage { return "maintenance" }
+        if hasUsage && !hasDaily && !hasWeekly { return "usage" }
+        if hasDaily { return "daily" }
+        if hasWeekly { return "weekly" }
+        if hasMaintenance { return "maintenance" }
+        if hasUsage { return "usage" }
+        return defaultType
     }
 
     private static func parseLoggedAt(from fields: [String: String]) -> Date? {

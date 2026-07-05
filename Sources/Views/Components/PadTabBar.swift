@@ -21,10 +21,10 @@ struct PadTabBar: View {
 
     private var tabs: [TabDescriptor] {
         [
-            TabDescriptor(tab: .dashboard, title: "Dashboard", systemImage: "house.fill"),
+            TabDescriptor(tab: .dashboard, title: "Home", systemImage: "house.fill"),
             TabDescriptor(tab: .history, title: "History", systemImage: "clock.arrow.circlepath"),
-            TabDescriptor(tab: .charts, title: "Charts", systemImage: "chart.xyaxis.line"),
-            TabDescriptor(tab: .setup, title: "Setup", systemImage: "gearshape.fill"),
+            TabDescriptor(tab: .charts, title: "Insights", systemImage: "chart.xyaxis.line"),
+            TabDescriptor(tab: .setup, title: "Settings", systemImage: "gearshape.fill"),
         ]
     }
 

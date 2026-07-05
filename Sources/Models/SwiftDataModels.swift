@@ -25,6 +25,18 @@ final class AppSettings {
     var temperatureUnit: String = "celsius"
     var updatedAt: Date = Date.now
 
+    // Maintenance reminder schedule (intervals are suggestions — adjust to your spa manufacturer).
+    var reminderWaterTestEnabled: Bool = true
+    var reminderWaterTestDays: Int = 1
+    var reminderWeeklyCheckEnabled: Bool = true
+    var reminderWeeklyCheckDays: Int = 7
+    var reminderFilterRinseEnabled: Bool = true
+    var reminderFilterRinseDays: Int = 14
+    var reminderFilterChangeEnabled: Bool = false
+    var reminderFilterChangeMonths: Int = 12
+    var reminderWaterChangeEnabled: Bool = false
+    var reminderWaterChangeDays: Int = 90
+
     init(
         settingsKey: String = "default",
         capacity: Double = 1000,
@@ -32,7 +44,17 @@ final class AppSettings {
         measurementSystem: String = "metric",
         sanitizerType: String = "chlorine",
         temperatureUnit: String = "celsius",
-        updatedAt: Date = .now
+        updatedAt: Date = .now,
+        reminderWaterTestEnabled: Bool = true,
+        reminderWaterTestDays: Int = 1,
+        reminderWeeklyCheckEnabled: Bool = true,
+        reminderWeeklyCheckDays: Int = 7,
+        reminderFilterRinseEnabled: Bool = true,
+        reminderFilterRinseDays: Int = 14,
+        reminderFilterChangeEnabled: Bool = false,
+        reminderFilterChangeMonths: Int = 12,
+        reminderWaterChangeEnabled: Bool = false,
+        reminderWaterChangeDays: Int = 90
     ) {
         self.settingsKey = settingsKey
         self.capacity = capacity
@@ -41,6 +63,16 @@ final class AppSettings {
         self.sanitizerType = sanitizerType
         self.temperatureUnit = temperatureUnit
         self.updatedAt = updatedAt
+        self.reminderWaterTestEnabled = reminderWaterTestEnabled
+        self.reminderWaterTestDays = reminderWaterTestDays
+        self.reminderWeeklyCheckEnabled = reminderWeeklyCheckEnabled
+        self.reminderWeeklyCheckDays = reminderWeeklyCheckDays
+        self.reminderFilterRinseEnabled = reminderFilterRinseEnabled
+        self.reminderFilterRinseDays = reminderFilterRinseDays
+        self.reminderFilterChangeEnabled = reminderFilterChangeEnabled
+        self.reminderFilterChangeMonths = reminderFilterChangeMonths
+        self.reminderWaterChangeEnabled = reminderWaterChangeEnabled
+        self.reminderWaterChangeDays = reminderWaterChangeDays
     }
 
     /// Volume in litres for calculators (matches React `volume_litres` fallback chain).
@@ -175,6 +207,7 @@ final class MaintenanceLogEntry {
 
     var action: String = ""
     var notes: String = ""
+    var filterRinsed: Bool = false
     var filterChanged: Bool = false
     var waterChange: Bool = false
 
@@ -183,6 +216,7 @@ final class MaintenanceLogEntry {
         createdAt: Date = .now,
         action: String = "",
         notes: String = "",
+        filterRinsed: Bool = false,
         filterChanged: Bool = false,
         waterChange: Bool = false
     ) {
@@ -190,6 +224,7 @@ final class MaintenanceLogEntry {
         self.createdAt = createdAt
         self.action = action
         self.notes = notes
+        self.filterRinsed = filterRinsed
         self.filterChanged = filterChanged
         self.waterChange = waterChange
     }

@@ -65,6 +65,9 @@ enum DashboardActivity: Identifiable {
 
 @MainActor
 final class DashboardViewModel: ObservableObject {
+    /// Home preview count — full history lives on the History tab.
+    static let recentRecordsLimit = 3
+
     @Published private(set) var latestDailyLog: HotTubDailyLog?
     @Published private(set) var latestWeeklyLog: WeeklyCheckLog?
     @Published private(set) var recentRecords: [DashboardActivity] = []
@@ -76,29 +79,42 @@ final class DashboardViewModel: ObservableObject {
 
         let daily = (try? context.fetch(FetchDescriptor<HotTubDailyLog>())) ?? []
         let weekly = (try? context.fetch(FetchDescriptor<WeeklyCheckLog>())) ?? []
+        let maintenance = (try? context.fetch(FetchDescriptor<MaintenanceLogEntry>())) ?? []
+        let usage = (try? context.fetch(FetchDescriptor<UsageLogEntry>())) ?? []
         let settingsList = (try? context.fetch(FetchDescriptor<AppSettings>())) ?? []
         let settings = settingsList.first
 
         let sortedDaily = daily.sorted { $0.loggedAt > $1.loggedAt }
         let sortedWeekly = weekly.sorted { $0.loggedAt > $1.loggedAt }
+        let sortedMaintenance = maintenance.sorted { $0.loggedAt > $1.loggedAt }
         latestDailyLog = sortedDaily.first
         latestWeeklyLog = sortedWeekly.first
 
         isBromine = settings?.isBromine ?? false
 
-        var waterRecords: [DashboardActivity] = []
-        waterRecords.append(contentsOf: daily.map { .daily($0) })
-        waterRecords.append(contentsOf: weekly.map { .weekly($0) })
+        var allRecords: [DashboardActivity] = []
+        allRecords.append(contentsOf: daily.map { .daily($0) })
+        allRecords.append(contentsOf: weekly.map { .weekly($0) })
+        allRecords.append(contentsOf: maintenance.map { .maintenance($0) })
+        allRecords.append(contentsOf: usage.map { .usage($0) })
 
-        waterRecords.sort { a, b in
-            if a.sortMoment != b.sortMoment { return a.sortMoment > b.sortMoment }
-            return a.createdAtMoment > b.createdAtMoment
+        allRecords.sort { a, b in
+            HistorySorting.momentSortsBefore(
+                loggedAt: a.sortMoment,
+                createdAt: a.createdAtMoment,
+                loggedAt: b.sortMoment,
+                createdAt: b.createdAtMoment
+            )
         }
-        recentRecords = Array(waterRecords.prefix(5))
+        recentRecords = Array(allRecords.prefix(Self.recentRecordsLimit))
 
-        dueReminders = buildDueReminders(
+        dueReminders = ReminderSchedule.buildReminders(
+            settings: settings,
             lastDaily: latestDailyLog?.loggedAt,
-            lastWeekly: latestWeeklyLog?.loggedAt
+            lastWeekly: latestWeeklyLog?.loggedAt,
+            lastFilterRinse: sortedMaintenance.first(where: \.filterRinsed)?.loggedAt,
+            lastFilterChange: sortedMaintenance.first(where: \.filterChanged)?.loggedAt,
+            lastWaterChange: sortedMaintenance.first(where: \.waterChange)?.loggedAt
         )
     }
 
@@ -111,6 +127,20 @@ final class DashboardViewModel: ObservableObject {
         }
         try? context.save()
         reload(context: context)
+    }
+
+    /// Short hero headline for the dashboard status card.
+    func heroHeadline(ph: Double?, sanitizer: Double?, hasData: Bool, isDailyDue: Bool) -> String {
+        if !hasData { return "Check your water today" }
+        if isDailyDue { return "Water test due today" }
+        if readingsAreBalanced(ph: ph, sanitizer: sanitizer) { return "Water looks good" }
+        if phOutOfRange(ph), sanitizerOutOfRange(sanitizer) { return "Water needs attention" }
+        if phOutOfRange(ph) { return "pH needs attention" }
+        return "\(isBromine ? "Bromine" : "Chlorine") needs attention"
+    }
+
+    func readingsAreBalanced(ph: Double?, sanitizer: Double?) -> Bool {
+        !phOutOfRange(ph) && !sanitizerOutOfRange(sanitizer)
     }
 
     /// Neutral summary of last readings vs typical reference ranges — not treatment advice.
@@ -141,33 +171,9 @@ final class DashboardViewModel: ObservableObject {
         return ph < 7.2 || ph > 7.8
     }
 
-    /// True when the latest daily log is more than 24 hours old.
+    /// True when the latest daily log is more than the configured interval old.
     var readingsAreStale: Bool {
         guard let lastDaily = latestDailyLog?.loggedAt else { return false }
         return ReminderSchedule.isDailyDue(lastLog: lastDaily)
-    }
-
-    private func buildDueReminders(lastDaily: Date?, lastWeekly: Date?) -> [HomeReminder] {
-        var reminders: [HomeReminder] = []
-
-        if ReminderSchedule.isDailyDue(lastLog: lastDaily) {
-            reminders.append(
-                HomeReminder(
-                    kind: .dailyWaterTest,
-                    dueDate: ReminderSchedule.dailyDueDate(after: lastDaily)
-                )
-            )
-        }
-
-        if ReminderSchedule.isWeeklyDue(lastCheck: lastWeekly) {
-            reminders.append(
-                HomeReminder(
-                    kind: .weeklyWaterCheck,
-                    dueDate: ReminderSchedule.weeklyDueDate(after: lastWeekly)
-                )
-            )
-        }
-
-        return reminders.sorted { $0.dueDate < $1.dueDate }
     }
 }

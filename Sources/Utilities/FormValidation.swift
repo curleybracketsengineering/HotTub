@@ -123,14 +123,20 @@ enum FormValidation {
         return errors
     }
 
-    static func validateMaintenance(loggedAt: Date, action: String, waterChange: Bool, filterChanged: Bool) -> [String] {
+    static func validateMaintenance(
+        loggedAt: Date,
+        action: String,
+        waterChange: Bool,
+        filterChanged: Bool,
+        filterRinsed: Bool
+    ) -> [String] {
         var errors: [String] = []
         if isFutureLoggedDay(loggedAt) {
             errors.append("Cannot log service for a future date")
         }
         let trimmed = action.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty && !waterChange && !filterChanged {
-            errors.append("Enter an action or enable water change / filter changed")
+        if trimmed.isEmpty && !waterChange && !filterChanged && !filterRinsed {
+            errors.append("Enter an action or enable a service option")
         }
         return errors
     }

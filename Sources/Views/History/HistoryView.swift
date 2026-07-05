@@ -21,11 +21,7 @@ struct HistoryView: View {
     @Query(sort: \UsageLogEntry.loggedAt, order: .reverse) private var usageLogs: [UsageLogEntry]
     @Query private var settingsRows: [AppSettings]
 
-    @State private var filterDaily = true
-    @State private var filterWeekly = true
-    @State private var filterMaintenance = true
-    @State private var filterUsage = true
-    @State private var isFilterExpanded = false
+    @State private var logFilter: HistoryLogFilter = .all
     @State private var selectedRowID: String?
     @State private var selectedDay: Date?
     @State private var deleteTarget: HistoryRow?
@@ -35,27 +31,31 @@ struct HistoryView: View {
         settingsRows.first?.isBromine ?? false
     }
 
-    private var allFiltersOn: Bool {
-        filterDaily && filterWeekly && filterMaintenance && filterUsage
-    }
-
-    private var allFiltersBinding: Binding<Bool> {
-        Binding(
-            get: { allFiltersOn },
-            set: { setAllFilters($0) }
-        )
-    }
-
     private var combinedRows: [HistoryRow] {
         var rows: [HistoryRow] = []
-        if filterDaily { rows.append(contentsOf: dailyLogs.map { .daily($0) }) }
-        if filterWeekly { rows.append(contentsOf: weeklyLogs.map { .weekly($0) }) }
-        if filterMaintenance { rows.append(contentsOf: maintenanceLogs.map { .maintenance($0) }) }
-        if filterUsage { rows.append(contentsOf: usageLogs.map { .usage($0) }) }
+        switch logFilter {
+        case .all:
+            rows.append(contentsOf: dailyLogs.map { .daily($0) })
+            rows.append(contentsOf: weeklyLogs.map { .weekly($0) })
+            rows.append(contentsOf: maintenanceLogs.map { .maintenance($0) })
+            rows.append(contentsOf: usageLogs.map { .usage($0) })
+        case .daily:
+            rows.append(contentsOf: dailyLogs.map { .daily($0) })
+        case .weekly:
+            rows.append(contentsOf: weeklyLogs.map { .weekly($0) })
+        case .service:
+            rows.append(contentsOf: maintenanceLogs.map { .maintenance($0) })
+        case .usage:
+            rows.append(contentsOf: usageLogs.map { .usage($0) })
+        }
 
         return rows.sorted { a, b in
-            if a.sortMoment != b.sortMoment { return a.sortMoment > b.sortMoment }
-            return a.createdAt > b.createdAt
+            HistorySorting.momentSortsBefore(
+                loggedAt: a.sortMoment,
+                createdAt: a.createdAt,
+                loggedAt: b.sortMoment,
+                createdAt: b.createdAt
+            )
         }
     }
 
@@ -66,17 +66,25 @@ struct HistoryView: View {
 
     private var daySections: [HistoryDaySection] {
         let calendar = Calendar.current
-        var sections: [HistoryDaySection] = []
+        var grouped: [Date: [HistoryRow]] = [:]
 
         for row in combinedRows {
             let day = calendar.startOfDay(for: row.sortMoment)
-            if let last = sections.last, calendar.isDate(last.day, inSameDayAs: day) {
-                sections[sections.count - 1] = HistoryDaySection(day: day, rows: last.rows + [row])
-            } else {
-                sections.append(HistoryDaySection(day: day, rows: [row]))
-            }
+            grouped[day, default: []].append(row)
         }
-        return sections
+
+        let sortedDays = grouped.keys.sorted { HistorySorting.daySortsBefore($0, $1) }
+        return sortedDays.map { day in
+            let rows = grouped[day]!.sorted { a, b in
+                HistorySorting.momentSortsBefore(
+                    loggedAt: a.sortMoment,
+                    createdAt: a.createdAt,
+                    loggedAt: b.sortMoment,
+                    createdAt: b.createdAt
+                )
+            }
+            return HistoryDaySection(day: day, rows: rows)
+        }
     }
 
     private var selectedDaySection: HistoryDaySection? {
@@ -157,7 +165,7 @@ struct HistoryView: View {
     private var portraitDateSidebar: some View {
         List(selection: $selectedDay) {
             Section {
-                padFilterChips
+                padHistoryHeader
             }
 
             if daySections.isEmpty {
@@ -165,7 +173,7 @@ struct HistoryView: View {
                     ContentUnavailableView {
                         Label("No entries", systemImage: "tray")
                     } description: {
-                        Text("Try turning on more filters, or log something from Home.")
+                        Text("Try a different filter, or log something from Home.")
                     }
                 }
             } else {
@@ -178,8 +186,7 @@ struct HistoryView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("History")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private func dateSidebarRow(_ section: HistoryDaySection) -> some View {
@@ -265,7 +272,7 @@ struct HistoryView: View {
     private var historySplitSidebar: some View {
         List(selection: $selectedRowID) {
             Section {
-                padFilterChips
+                padHistoryHeader
             }
 
             if combinedRows.isEmpty {
@@ -273,7 +280,7 @@ struct HistoryView: View {
                     ContentUnavailableView {
                         Label("No entries", systemImage: "tray")
                     } description: {
-                        Text("Try turning on more filters, or log something from Home.")
+                        Text("Try a different filter, or log something from Home.")
                     }
                 }
             } else {
@@ -290,23 +297,14 @@ struct HistoryView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("History")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var padFilterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: AppSpacing.control) {
-                AppFilterChip(title: "All", isOn: allFiltersBinding)
-                AppFilterChip(title: "Daily", isOn: $filterDaily)
-                AppFilterChip(title: "Weekly", isOn: $filterWeekly)
-                AppFilterChip(title: "Service", isOn: $filterMaintenance)
-                AppFilterChip(title: "Usage", isOn: $filterUsage)
-            }
-            .padding(.vertical, 4)
-        }
-        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-        .listRowBackground(Color.clear)
+    private var padHistoryHeader: some View {
+        historyHeader
+            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 
     private func splitListRow(_ row: HistoryRow) -> some View {
@@ -375,16 +373,13 @@ struct HistoryView: View {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 if isTabRoot {
                     historyHeader
-                    filterChips
-                } else if isFilterExpanded {
-                    filterChips
                 }
 
                 if combinedRows.isEmpty {
                     AppEmptyState(
                         symbol: "tray",
                         title: "No entries",
-                        message: "Try turning on more filters, or tap Log on the dashboard."
+                        message: "Try a different filter, or tap Log on the dashboard."
                     )
                 } else {
                     LazyVStack(spacing: AppSpacing.section) {
@@ -396,32 +391,65 @@ struct HistoryView: View {
             }
             .appScrollScreenPadding()
         }
-        .modifier(HistoryNavigationChrome(isTabRoot: isTabRoot, isFilterExpanded: isFilterExpanded) {
-            withAnimation(.spring(response: 0.35)) {
-                isFilterExpanded.toggle()
-            }
+        .modifier(HistoryNavigationChrome(isTabRoot: isTabRoot) {
+            historyFilterMenu
         })
     }
 
     private var historyHeader: some View {
-        Text("History")
-            .font(.largeTitle.weight(.bold))
-            .foregroundStyle(palette.color(.textPrimary))
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .center, spacing: AppSpacing.control) {
+            Text("History")
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(palette.color(.textPrimary))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer(minLength: AppSpacing.control)
+
+            historyFilterMenu
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: AppSpacing.control) {
-                AppFilterChip(title: "All", isOn: allFiltersBinding)
-                AppFilterChip(title: "Daily", isOn: $filterDaily)
-                AppFilterChip(title: "Weekly", isOn: $filterWeekly)
-                AppFilterChip(title: "Service", isOn: $filterMaintenance)
-                AppFilterChip(title: "Usage", isOn: $filterUsage)
+    private var historyFilterMenu: some View {
+        Menu {
+            ForEach(HistoryLogFilter.allCases) { filter in
+                Button {
+                    withAnimation(.spring(response: 0.35)) {
+                        logFilter = filter
+                    }
+                } label: {
+                    if logFilter == filter {
+                        Label(filter.title, systemImage: "checkmark")
+                    } else {
+                        Text(filter.title)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease")
+                Text(logFilter.title)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(palette.color(.accentBlue))
+            .padding(.horizontal, 16)
+            .frame(minHeight: AppSpacing.minTap)
+            .background(palette.color(.surfaceCard))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        logFilter == .all ? palette.color(.separator) : palette.color(.accentBlue),
+                        lineWidth: 1
+                    )
             }
         }
-        .padding(.horizontal, -AppSpacing.screenHorizontal)
-        .padding(.leading, AppSpacing.screenHorizontal)
+        .buttonStyle(.plain)
     }
 
     private func daySection(_ section: HistoryDaySection) -> some View {
@@ -508,13 +536,6 @@ struct HistoryView: View {
         }
     }
 
-    private func setAllFilters(_ on: Bool) {
-        filterDaily = on
-        filterWeekly = on
-        filterMaintenance = on
-        filterUsage = on
-    }
-
     private func syncSelectionWithRows() {
         guard usesSplitLayout else { return }
         if usesDateMenuSidebar {
@@ -583,10 +604,9 @@ struct HistoryView: View {
     }
 }
 
-private struct HistoryNavigationChrome: ViewModifier {
+private struct HistoryNavigationChrome<F: View>: ViewModifier {
     let isTabRoot: Bool
-    let isFilterExpanded: Bool
-    let toggleFilter: () -> Void
+    @ViewBuilder let filterMenu: () -> F
 
     func body(content: Content) -> some View {
         if isTabRoot {
@@ -597,9 +617,29 @@ private struct HistoryNavigationChrome: ViewModifier {
                 .navigationBarTitleDisplayMode(.large)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        AppFilterToggleButton(isExpanded: isFilterExpanded, action: toggleFilter)
+                        filterMenu()
                     }
                 }
+        }
+    }
+}
+
+private enum HistoryLogFilter: String, CaseIterable, Identifiable {
+    case all
+    case daily
+    case weekly
+    case service
+    case usage
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .daily: "Daily"
+        case .weekly: "Weekly"
+        case .service: "Service"
+        case .usage: "Usage"
         }
     }
 }
@@ -608,7 +648,10 @@ private struct HistoryDaySection: Identifiable {
     let day: Date
     let rows: [HistoryRow]
 
-    var id: Date { day }
+    var id: String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: day)
+        return "\(parts.year ?? 0)-\(parts.month ?? 0)-\(parts.day ?? 0)"
+    }
 }
 
 enum HistoryRow: Identifiable {
@@ -646,10 +689,10 @@ enum HistoryRow: Identifiable {
 
     var title: String {
         switch self {
-        case .daily: return "Daily log"
+        case .daily: return "Water test"
         case .weekly: return "Full water check"
         case .maintenance(let x): return x.action.isEmpty ? "Service" : x.action
-        case .usage: return "Hot tub usage"
+        case .usage: return "Hot-tub usage"
         }
     }
 }

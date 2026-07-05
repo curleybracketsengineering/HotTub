@@ -25,12 +25,10 @@ struct DailyLogFormView: View {
     @State private var addedPhDown: String = ""
     @State private var notes: String = ""
 
+    @State private var alertTitle = "Fix before saving"
     @State private var alertMessage: String?
     @State private var showAlert = false
     @State private var presentedHelp: HelpSheetRequest?
-    @State private var draftRecord: HotTubDailyLog?
-    @State private var autoSaveScheduler = FormAutoSaveScheduler()
-    @State private var skipAutoSave = true
     @Query private var settingsRows: [AppSettings]
 
     private var isCelsius: Bool {
@@ -109,13 +107,13 @@ struct DailyLogFormView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .appGroupedScreenBackground(palette)
-        .navigationTitle(existing == nil ? "Daily log" : "Edit daily log")
+        .navigationTitle(existing == nil ? "Water test" : "Edit water test")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { finish() }
             }
-            if activeRecord != nil {
+            if existing != nil {
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Delete", role: .destructive) { deleteLog() }
                 }
@@ -137,18 +135,8 @@ struct DailyLogFormView: View {
             } else {
                 waterTemp = isCelsius ? 37 : 98
             }
-            skipAutoSave = false
         }
-        .onChange(of: formSnapshot) { _, _ in scheduleAutoSave() }
-        .onDisappear {
-            autoSaveScheduler.flush { persistDraft() }
-            refreshReminders()
-            if existing == nil, let draft = draftRecord, isEmptyDraft(draft) {
-                modelContext.delete(draft)
-                try? modelContext.save()
-            }
-        }
-        .alert("Cannot save", isPresented: $showAlert) {
+        .alert(alertTitle, isPresented: $showAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage ?? "")
@@ -244,74 +232,6 @@ struct DailyLogFormView: View {
         }
     }
 
-    private var activeRecord: HotTubDailyLog? {
-        existing ?? draftRecord
-    }
-
-    private var formSnapshot: DailyFormSnapshot {
-        DailyFormSnapshot(
-            loggedAt: loggedAt,
-            waterTemp: waterTemp,
-            ph: ph,
-            sanitizerFree: sanitizerFree,
-            sanitizerCombined: sanitizerCombined,
-            addedSanitizer: addedSanitizer,
-            addedPhUp: addedPhUp,
-            addedPhDown: addedPhDown,
-            notes: notes
-        )
-    }
-
-    private var hasDraftContent: Bool {
-        !ph.trimmingCharacters(in: .whitespaces).isEmpty
-            || !sanitizerFree.trimmingCharacters(in: .whitespaces).isEmpty
-            || !sanitizerCombined.trimmingCharacters(in: .whitespaces).isEmpty
-            || !addedSanitizer.trimmingCharacters(in: .whitespaces).isEmpty
-            || !addedPhUp.trimmingCharacters(in: .whitespaces).isEmpty
-            || !addedPhDown.trimmingCharacters(in: .whitespaces).isEmpty
-            || !notes.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    private func scheduleAutoSave() {
-        guard !skipAutoSave else { return }
-        autoSaveScheduler.schedule { persistDraft() }
-    }
-
-    @discardableResult
-    private func persistDraft() -> Bool {
-        guard existing != nil || hasDraftContent else { return true }
-
-        let phVal = FormFieldParsing.validatedOptionalDouble(from: ph, min: 0, max: 14)
-        let freeVal = FormFieldParsing.validatedOptionalDouble(from: sanitizerFree, min: 0, max: 20)
-        let combVal = FormFieldParsing.validatedOptionalDouble(from: sanitizerCombined, min: 0, max: 20)
-
-        let record: HotTubDailyLog
-        if let existing {
-            record = existing
-        } else if let draftRecord {
-            record = draftRecord
-        } else {
-            let log = HotTubDailyLog(
-                loggedAt: loggedAt,
-                waterTemperature: waterTemp,
-                ph: phVal,
-                sanitizerFree: freeVal,
-                sanitizerCombined: combVal,
-                addedPhUp: FormFieldParsing.nonNegativeDouble(from: addedPhUp),
-                addedPhDown: FormFieldParsing.nonNegativeDouble(from: addedPhDown),
-                addedSanitizer: FormFieldParsing.nonNegativeDouble(from: addedSanitizer),
-                notes: notes.isEmpty ? nil : notes
-            )
-            modelContext.insert(log)
-            draftRecord = log
-            record = log
-        }
-
-        apply(to: record, phVal: phVal, freeVal: freeVal, combVal: combVal)
-        try? modelContext.save()
-        return true
-    }
-
     private func refreshReminders() {
         guard !PreviewEnvironment.isActive else { return }
         Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
@@ -330,14 +250,48 @@ struct DailyLogFormView: View {
             isBromine: isBromine
         )
         if !errs.isEmpty {
+            alertTitle = "Fix before saving"
             alertMessage = errs.joined(separator: "\n")
             showAlert = true
             return
         }
 
-        autoSaveScheduler.flush { persistDraft() }
+        guard commitSave() else { return }
         refreshReminders()
         dismiss()
+    }
+
+    @discardableResult
+    private func commitSave() -> Bool {
+        let phVal = FormFieldParsing.validatedOptionalDouble(from: ph, min: 0, max: 14)
+        let freeVal = FormFieldParsing.validatedOptionalDouble(from: sanitizerFree, min: 0, max: 20)
+        let combVal = FormFieldParsing.validatedOptionalDouble(from: sanitizerCombined, min: 0, max: 20)
+
+        do {
+            if let existing {
+                apply(to: existing, phVal: phVal, freeVal: freeVal, combVal: combVal)
+            } else {
+                let log = HotTubDailyLog(
+                    loggedAt: loggedAt,
+                    waterTemperature: waterTemp,
+                    ph: phVal,
+                    sanitizerFree: freeVal,
+                    sanitizerCombined: combVal,
+                    addedPhUp: FormFieldParsing.nonNegativeDouble(from: addedPhUp),
+                    addedPhDown: FormFieldParsing.nonNegativeDouble(from: addedPhDown),
+                    addedSanitizer: FormFieldParsing.nonNegativeDouble(from: addedSanitizer),
+                    notes: notes.isEmpty ? nil : notes
+                )
+                modelContext.insert(log)
+            }
+            try modelContext.save()
+            return true
+        } catch {
+            alertTitle = "Couldn't save"
+            alertMessage = "Please try again."
+            showAlert = true
+            return false
+        }
     }
 
     private func apply(to record: HotTubDailyLog, phVal: Double?, freeVal: Double?, combVal: Double?) {
@@ -358,33 +312,11 @@ struct DailyLogFormView: View {
         record.notes = notes.isEmpty ? nil : notes
     }
 
-    private func isEmptyDraft(_ record: HotTubDailyLog) -> Bool {
-        record.ph == nil
-            && record.sanitizerFree == nil
-            && record.sanitizerCombined == nil
-            && record.addedSanitizer == 0
-            && record.addedPhUp == 0
-            && record.addedPhDown == 0
-            && (record.notes?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
-    }
-
     private func deleteLog() {
-        guard let record = activeRecord else { return }
+        guard let record = existing else { return }
         modelContext.delete(record)
         try? modelContext.save()
         refreshReminders()
         dismiss()
     }
-}
-
-private struct DailyFormSnapshot: Equatable {
-    var loggedAt: Date
-    var waterTemp: Int
-    var ph: String
-    var sanitizerFree: String
-    var sanitizerCombined: String
-    var addedSanitizer: String
-    var addedPhUp: String
-    var addedPhDown: String
-    var notes: String
 }

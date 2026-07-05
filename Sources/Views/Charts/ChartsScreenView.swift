@@ -23,10 +23,31 @@ private struct UserBarPoint: Identifiable {
 private struct ChemistryPeriodSummary {
     let testsRecorded: Int
     let phReadingCount: Int
-    let phInRangePercent: Int?
+    let phLowCount: Int
+    let phHighCount: Int
     let sanitizerReadingCount: Int
     let sanitizerLowCount: Int
     let sanitizerHighCount: Int
+}
+
+private enum ChemistryRangePosition {
+    case inRange
+    case below
+    case above
+
+    static func from(value: Double, ideal: ClosedRange<Double>) -> Self {
+        if ideal.contains(value) { return .inRange }
+        if value < ideal.lowerBound { return .below }
+        return .above
+    }
+
+    var currentStatusPhrase: String {
+        switch self {
+        case .inRange: "Currently in range"
+        case .below: "Currently below range"
+        case .above: "Currently above range"
+        }
+    }
 }
 
 private enum ChartRange: String, CaseIterable {
@@ -86,12 +107,22 @@ struct ChartsScreenView: View {
         ChartsWeekCalendar.weekSunday(forWeekStarting: sevenDayWeekStart)
     }
 
+    /// Exclusive end for week chart scale so Sunday's label/grid line aren't clipped.
+    private var last7DaysChartScaleEnd: Date {
+        let cal = Calendar.current
+        return cal.date(byAdding: .day, value: 1, to: last7DaysChartEnd) ?? last7DaysChartEnd
+    }
+
     private var isViewingCurrentWeek: Bool {
         Calendar.current.isDate(sevenDayWeekStart, inSameDayAs: currentWeekMonday)
     }
 
     private var currentWeekMonday: Date {
         ChartsWeekCalendar.mondayContaining(todayStart)
+    }
+
+    private var selectedWeekStart: Date {
+        ChartsWeekCalendar.mondayContaining(sevenDayWeekStart)
     }
 
     private var canAdvanceSevenDayWindow: Bool {
@@ -112,13 +143,15 @@ struct ChartsScreenView: View {
         todayStart
     }
 
-    /// End of the current month so all three month labels fit on narrow charts.
+    /// Last day on the 3-month chart x-axis (today, like the current-month chart).
     private var threeMonthsChartEnd: Date {
+        threeMonthsDataEnd
+    }
+
+    /// Exclusive end for 3-month chart scale so the last day's point/label aren't clipped.
+    private var threeMonthsChartScaleEnd: Date {
         let cal = Calendar.current
-        guard let interval = cal.dateInterval(of: .month, for: todayStart),
-              let lastDay = cal.date(byAdding: .day, value: -1, to: interval.end)
-        else { return threeMonthsDataEnd }
-        return cal.startOfDay(for: lastDay)
+        return cal.date(byAdding: .day, value: 1, to: threeMonthsChartEnd) ?? threeMonthsChartEnd
     }
 
     private var threeMonthsLabel: String {
@@ -155,6 +188,28 @@ struct ChartsScreenView: View {
         let cal = Calendar.current
         return cal.date(from: cal.dateComponents([.year, .month], from: viewMonth))
             ?? cal.startOfDay(for: viewMonth)
+    }
+
+    private var isViewingCurrentMonth: Bool {
+        Calendar.current.isDate(viewMonthStart, equalTo: todayStart, toGranularity: .month)
+    }
+
+    private var monthLastDay: Date {
+        let cal = Calendar.current
+        guard let interval = cal.dateInterval(of: .month, for: viewMonth) else { return todayStart }
+        let last = cal.date(byAdding: .day, value: -1, to: interval.end) ?? interval.start
+        return cal.startOfDay(for: last)
+    }
+
+    /// Last calendar day on the month chart x-axis (today when viewing the current month).
+    private var monthChartEnd: Date {
+        isViewingCurrentMonth ? todayStart : monthLastDay
+    }
+
+    /// Exclusive end for month chart scale so the last day's point/label aren't clipped.
+    private var monthChartScaleEnd: Date {
+        let cal = Calendar.current
+        return cal.date(byAdding: .day, value: 1, to: monthChartEnd) ?? monthChartEnd
     }
 
     private var monthPickerOptions: [Date] {
@@ -206,26 +261,33 @@ struct ChartsScreenView: View {
         case .last7Days:
             return day >= last7DaysStart && day <= last7DaysDataEnd
         case .month:
-            return cal.isDate(day, equalTo: viewMonth, toGranularity: .month)
+            guard cal.isDate(day, equalTo: viewMonth, toGranularity: .month) else { return false }
+            return !isViewingCurrentMonth || day <= todayStart
         case .threeMonths:
             return day >= threeMonthsStart && day <= threeMonthsDataEnd
         }
     }
 
     private var chartXDomain: ClosedRange<Date> {
-        let cal = Calendar.current
         switch chartRange {
         case .last7Days:
-            return last7DaysStart ... last7DaysChartEnd
+            return last7DaysStart ... last7DaysChartScaleEnd
         case .month:
-            guard let interval = cal.dateInterval(of: .month, for: viewMonth) else {
-                let today = todayStart
-                return today ... today
-            }
-            let monthEnd = cal.date(byAdding: .day, value: -1, to: interval.end) ?? interval.start
-            return cal.startOfDay(for: interval.start) ... cal.startOfDay(for: monthEnd)
+            return viewMonthStart ... monthChartScaleEnd
         case .threeMonths:
-            return threeMonthsStart ... threeMonthsChartEnd
+            return threeMonthsStart ... threeMonthsChartScaleEnd
+        }
+    }
+
+    /// Inclusive last day for the ideal-range band (scale end adds a day so points aren't clipped).
+    private var chartXBandEnd: Date {
+        switch chartRange {
+        case .last7Days:
+            return last7DaysChartEnd
+        case .month:
+            return monthChartEnd
+        case .threeMonths:
+            return threeMonthsChartEnd
         }
     }
 
@@ -242,29 +304,42 @@ struct ChartsScreenView: View {
         return dates
     }
 
-    /// Mondays in the viewed month — one vertical line / label per week.
-    private var monthMondayMarkDates: [Date] {
+    /// Month start, Mondays, and today (current month) so edge days aren't clipped from the plot.
+    private var monthMarkDates: [Date] {
         let cal = Calendar.current
         guard let interval = cal.dateInterval(of: .month, for: viewMonth) else { return [] }
-        var dates: [Date] = []
-        var day = cal.startOfDay(for: interval.start)
-        while day < interval.end {
+        var dates = Set<Date>()
+        let monthStart = cal.startOfDay(for: interval.start)
+        dates.insert(monthStart)
+
+        var day = monthStart
+        while day <= monthChartEnd {
             if cal.component(.weekday, from: day) == 2 {
-                dates.append(day)
+                dates.insert(day)
             }
             guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
             day = next
         }
-        return dates
+
+        if isViewingCurrentMonth {
+            dates.insert(todayStart)
+        }
+
+        return dates.sorted()
     }
 
-    /// Mid-month anchors in the rolling 3-month window (keeps labels away from chart edges).
+    /// Mid-month anchors in the rolling 3-month window; partial current month uses its start.
     private var threeMonthMarkDates: [Date] {
         let cal = Calendar.current
         var dates: [Date] = []
         var monthStart = threeMonthsStart
         while monthStart <= threeMonthsChartEnd {
-            dates.append(cal.date(byAdding: .day, value: 14, to: monthStart) ?? monthStart)
+            let midMonth = cal.date(byAdding: .day, value: 14, to: monthStart) ?? monthStart
+            if midMonth <= threeMonthsChartEnd {
+                dates.append(midMonth)
+            } else {
+                dates.append(monthStart)
+            }
             guard let next = cal.date(byAdding: .month, value: 1, to: monthStart) else { break }
             monthStart = next
         }
@@ -274,7 +349,7 @@ struct ChartsScreenView: View {
     private var xAxisMarkDates: [Date] {
         switch chartRange {
         case .month:
-            return monthMondayMarkDates
+            return monthMarkDates
         case .last7Days:
             return sevenDayMarkDates
         case .threeMonths:
@@ -387,18 +462,25 @@ struct ChartsScreenView: View {
         return ceil(value / step) * step
     }
 
-    private var userCountByDay: [String: Int] {
-        var m: [String: Int] = [:]
+    private var usageBarPoints: [UserBarPoint] {
         let cal = Calendar.current
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM-dd"
-        for u in filteredUsageLogs {
-            let day = cal.startOfDay(for: u.loggedAt)
-            let k = df.string(from: day)
-            m[k, default: 0] += u.numUsers
+        var countByDay: [Date: Int] = [:]
+        for log in filteredUsageLogs {
+            let day = cal.startOfDay(for: log.loggedAt)
+            countByDay[day, default: 0] += log.numUsers
         }
-        return m
+        return countByDay.keys.sorted().map { day in
+            UserBarPoint(
+                id: usageDayID(day),
+                day: day,
+                count: countByDay[day, default: 0]
+            )
+        }
+    }
+
+    private func usageDayID(_ day: Date) -> String {
+        let parts = Calendar.current.dateComponents([.year, .month, .day], from: day)
+        return "\(parts.year ?? 0)-\(parts.month ?? 0)-\(parts.day ?? 0)"
     }
 
     private var hasData: Bool {
@@ -414,10 +496,9 @@ struct ChartsScreenView: View {
         guard !logs.isEmpty else { return nil }
 
         let phValues = logs.compactMap(\.ph)
-        let phInRangePercent: Int? = phValues.isEmpty
-            ? nil
-            : Int((Double(phValues.filter { WaterChemistryRanges.phIdeal.contains($0) }.count)
-                / Double(phValues.count) * 100).rounded())
+        let phIdeal = WaterChemistryRanges.phIdeal
+        let phLowCount = phValues.filter { $0 < phIdeal.lowerBound }.count
+        let phHighCount = phValues.filter { $0 > phIdeal.upperBound }.count
 
         let ideal = isBromine
             ? WaterChemistryRanges.bromineIdeal
@@ -429,7 +510,8 @@ struct ChartsScreenView: View {
         return ChemistryPeriodSummary(
             testsRecorded: logs.count,
             phReadingCount: phValues.count,
-            phInRangePercent: phInRangePercent,
+            phLowCount: phLowCount,
+            phHighCount: phHighCount,
             sanitizerReadingCount: sanitizerValues.count,
             sanitizerLowCount: sanitizerLowCount,
             sanitizerHighCount: sanitizerHighCount
@@ -468,6 +550,8 @@ struct ChartsScreenView: View {
                 .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .appGroupedScreenBackground(palette)
+        .navigationTitle("Insights")
+        .navigationBarTitleDisplayMode(.large)
         .onAppear {
             HotTubModelContainer.seedIfNeeded(in: modelContext)
             clampChartRangeIfNeeded()
@@ -495,7 +579,9 @@ struct ChartsScreenView: View {
                 )
             } else {
                 chemistryChartsSection
-                usersChart
+                if !filteredUsageLogs.isEmpty {
+                    usageChartsSection
+                }
             }
 
             guideSection
@@ -596,8 +682,11 @@ struct ChartsScreenView: View {
                         highCount: summary.sanitizerHighCount
                     )
                 }
-                if summary.phReadingCount > 0, let percent = summary.phInRangePercent {
-                    phSummaryCard(percent: percent)
+                if summary.phReadingCount > 0 {
+                    phSummaryCard(
+                        lowCount: summary.phLowCount,
+                        highCount: summary.phHighCount
+                    )
                 }
             }
 
@@ -607,20 +696,28 @@ struct ChartsScreenView: View {
         }
     }
 
-    private func phSummaryCard(percent: Int) -> some View {
-        VStack(spacing: 12) {
-            ChartsSummaryRing(
-                progress: Double(percent) / 100,
-                color: palette.color(.accentGreen),
-                trackColor: palette.color(.accentGreen).opacity(0.2),
-                label: "\(percent)%"
+    private func phSummaryCard(lowCount: Int, highCount: Int) -> some View {
+        let outOfRangeCount = lowCount + highCount
+        let latestValue = phMarks.last?.value
+        let currentPosition = latestValue.map {
+            ChemistryRangePosition.from(value: $0, ideal: WaterChemistryRanges.phIdeal)
+        }
+        let currentStatus = latestValue.map(WaterChemistryRanges.phStatus)
+        let currentlyInRange = currentPosition == .inRange
+        let accentColor = summaryAccentColor(for: currentStatus, outOfRangeCount: outOfRangeCount)
+
+        return VStack(spacing: 12) {
+            summaryStatusIcon(
+                currentlyInRange: currentlyInRange,
+                accentColor: accentColor,
+                outOfRangeCount: outOfRangeCount
             )
 
-            Text("pH in range")
+            Text(phSummaryTitle(currentPosition: currentPosition))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.color(.textPrimary))
 
-            Text("\(percent)% of readings in range \(summaryPeriodPhrase).")
+            Text(chemistrySummaryDetail(currentPosition: currentPosition, outOfRangeCount: outOfRangeCount))
                 .font(.caption)
                 .foregroundStyle(palette.color(.textSecondary))
                 .multilineTextAlignment(.center)
@@ -629,42 +726,41 @@ struct ChartsScreenView: View {
         .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
         .appCard(palette: palette, radius: AppSpacing.cardRadius, padding: 16)
+    }
+
+    private func phSummaryTitle(currentPosition: ChemistryRangePosition?) -> String {
+        switch currentPosition {
+        case .inRange, nil: return "pH in range"
+        case .below: return "Low pH"
+        case .above: return "High pH"
+        }
     }
 
     private func sanitizerSummaryCard(lowCount: Int, highCount: Int) -> some View {
-        let inRange = lowCount == 0 && highCount == 0
         let outOfRangeCount = lowCount + highCount
-        let accentColor: Color = {
-            if inRange { return palette.color(.accentGreen) }
-            if highCount > 0 { return palette.color(.accentRed) }
-            return palette.color(.accentOrange)
-        }()
+        let ideal = isBromine
+            ? WaterChemistryRanges.bromineIdeal
+            : WaterChemistryRanges.chlorineIdeal
+        let latestValue = sanitizerMarks.last?.value
+        let currentPosition = latestValue.map {
+            ChemistryRangePosition.from(value: $0, ideal: ideal)
+        }
+        let currentStatus = latestValue.map(sanitizerReadingStatus(for:))
+        let currentlyInRange = currentPosition == .inRange
+        let accentColor = summaryAccentColor(for: currentStatus, outOfRangeCount: outOfRangeCount)
 
         return VStack(spacing: 12) {
-            if inRange {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 40, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(accentColor)
-                    .frame(height: 72)
-            } else {
-                VStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 28, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(accentColor)
-                    Text("\(outOfRangeCount)")
-                        .font(.title.weight(.bold))
-                        .foregroundStyle(palette.color(.textPrimary))
-                }
-                .frame(height: 72)
-            }
+            summaryStatusIcon(
+                currentlyInRange: currentlyInRange,
+                accentColor: accentColor,
+                outOfRangeCount: outOfRangeCount
+            )
 
-            Text(sanitizerSummaryTitle(lowCount: lowCount, highCount: highCount))
+            Text(sanitizerSummaryTitle(currentPosition: currentPosition))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.color(.textPrimary))
 
-            Text(sanitizerSummaryDetail(lowCount: lowCount, highCount: highCount))
+            Text(chemistrySummaryDetail(currentPosition: currentPosition, outOfRangeCount: outOfRangeCount))
                 .font(.caption)
                 .foregroundStyle(palette.color(.textSecondary))
                 .multilineTextAlignment(.center)
@@ -675,25 +771,66 @@ struct ChartsScreenView: View {
         .appCard(palette: palette, radius: AppSpacing.cardRadius, padding: 16)
     }
 
-    private func sanitizerSummaryTitle(lowCount: Int, highCount: Int) -> String {
+    private func sanitizerSummaryTitle(currentPosition: ChemistryRangePosition?) -> String {
         let name = sanitizerLabel.lowercased()
-        if lowCount == 0, highCount == 0 { return "\(sanitizerLabel) in range" }
-        if lowCount > 0, highCount == 0 { return "Low \(name)" }
-        if highCount > 0, lowCount == 0 { return "High \(name)" }
-        return "\(sanitizerLabel) outside range"
+        switch currentPosition {
+        case .inRange, nil: return "\(sanitizerLabel) in range"
+        case .below: return "Low \(name)"
+        case .above: return "High \(name)"
+        }
     }
 
-    private func sanitizerSummaryDetail(lowCount: Int, highCount: Int) -> String {
-        if lowCount == 0, highCount == 0 {
-            return "All readings in range \(summaryPeriodPhrase)."
+    @ViewBuilder
+    private func summaryStatusIcon(
+        currentlyInRange: Bool,
+        accentColor: Color,
+        outOfRangeCount: Int
+    ) -> some View {
+        if currentlyInRange {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 40, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(accentColor)
+                .frame(height: 72)
+        } else {
+            VStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 28, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(accentColor)
+                Text("\(outOfRangeCount)")
+                    .font(.title.weight(.bold))
+                    .foregroundStyle(palette.color(.textPrimary))
+            }
+            .frame(height: 72)
         }
-        if lowCount > 0, highCount == 0 {
-            return "\(lowCount) time\(lowCount == 1 ? "" : "s") \(summaryPeriodPhrase) below recommended range."
+    }
+
+    private func summaryAccentColor(
+        for currentStatus: WaterChemistryReadingStatus?,
+        outOfRangeCount: Int
+    ) -> Color {
+        if let currentStatus {
+            return WaterChemistryRanges.statusColor(currentStatus, palette: palette)
         }
-        if highCount > 0, lowCount == 0 {
-            return "\(highCount) time\(highCount == 1 ? "" : "s") \(summaryPeriodPhrase) above recommended range."
+        if outOfRangeCount == 0 { return palette.color(.accentGreen) }
+        return palette.color(.accentOrange)
+    }
+
+    private func chemistrySummaryDetail(
+        currentPosition: ChemistryRangePosition?,
+        outOfRangeCount: Int
+    ) -> String {
+        guard let currentPosition else {
+            if outOfRangeCount == 0 {
+                return "Currently in range"
+            }
+            return "Out of range \(outOfRangeCount) time\(outOfRangeCount == 1 ? "" : "s") \(summaryPeriodPhrase)"
         }
-        return "\(lowCount) below and \(highCount) above recommended range \(summaryPeriodPhrase)."
+        if outOfRangeCount == 0 {
+            return currentPosition.currentStatusPhrase
+        }
+        return "\(currentPosition.currentStatusPhrase), out of range \(outOfRangeCount) time\(outOfRangeCount == 1 ? "" : "s") \(summaryPeriodPhrase)"
     }
 
     private var chemistryTipBanner: some View {
@@ -862,13 +999,29 @@ struct ChartsScreenView: View {
     }
 
     private var weekPeriodPicker: some View {
-        Picker("Week", selection: $sevenDayWeekStart) {
+        Menu {
             ForEach(weekPickerOptions, id: \.self) { monday in
-                Text(weekPickerLabel(for: monday)).tag(monday)
+                Button {
+                    sevenDayWeekStart = monday
+                } label: {
+                    if Calendar.current.isDate(monday, inSameDayAs: selectedWeekStart) {
+                        Label(weekPickerLabel(for: monday), systemImage: "checkmark")
+                    } else {
+                        Text(weekPickerLabel(for: monday))
+                    }
+                }
             }
+        } label: {
+            HStack(spacing: 4) {
+                Text(weekPickerLabel(for: selectedWeekStart))
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(palette.color(.accentBlue))
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .pickerStyle(.menu)
-        .tint(palette.color(.accentBlue))
     }
 
     private func monthPickerLabel(for monthStart: Date) -> String {
@@ -893,11 +1046,14 @@ struct ChartsScreenView: View {
 
     private func shiftSevenDayWindow(by days: Int) {
         let cal = Calendar.current
-        guard let shifted = cal.date(byAdding: .day, value: days, to: sevenDayWeekStart) else { return }
+        guard let shifted = cal.date(byAdding: .day, value: days, to: selectedWeekStart) else { return }
+        let normalized = ChartsWeekCalendar.mondayContaining(shifted)
         if days > 0 {
-            sevenDayWeekStart = min(shifted, currentWeekMonday)
+            sevenDayWeekStart = min(normalized, currentWeekMonday)
+        } else if let earliest = weekPickerOptions.last {
+            sevenDayWeekStart = max(normalized, earliest)
         } else {
-            sevenDayWeekStart = shifted
+            sevenDayWeekStart = normalized
         }
     }
 
@@ -983,7 +1139,7 @@ struct ChartsScreenView: View {
                     Chart {
                         RectangleMark(
                             xStart: .value("Start", chartXDomain.lowerBound, unit: .day),
-                            xEnd: .value("End", chartXDomain.upperBound, unit: .day),
+                            xEnd: .value("End", chartXBandEnd, unit: .day),
                             yStart: .value("Ideal low", idealRange.lowerBound),
                             yEnd: .value("Ideal high", idealRange.upperBound)
                         )
@@ -1027,6 +1183,9 @@ struct ChartsScreenView: View {
                         chartXAxisMarks(showLabels: true, showGrid: true)
                     }
                     .chartXScale(domain: chartXDomain)
+                    .chartPlotStyle { plotArea in
+                        plotArea.clipShape(Rectangle())
+                    }
                     .frame(height: chemistryChartHeight)
                 }
             }
@@ -1050,12 +1209,70 @@ struct ChartsScreenView: View {
         }
     }
 
-    private var usersChart: some View {
-        let barPoints: [UserBarPoint] = userCountByDay.keys.sorted().compactMap { k in
-            guard let d = parseYMD(k), let n = userCountByDay[k] else { return nil }
-            return UserBarPoint(id: k, day: d, count: n)
+    private var suspiciousUsageLogs: [UsageLogEntry] {
+        UsageLogDiagnostics.entriesMatchingSanitizerPPM(
+            usage: filteredUsageLogs,
+            daily: allDaily
+        )
+    }
+
+    private var usageSessionCount: Int {
+        filteredUsageLogs.count
+    }
+
+    @ViewBuilder
+    private var usageChartsSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.control) {
+            if !suspiciousUsageLogs.isEmpty {
+                usageMismatchBanner
+            }
+
+            usersChart
         }
-        return chartCard(title: "Users per day") {
+    }
+
+    private var usageMismatchBanner: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(palette.color(.accentOrange))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("These may not be real usage sessions")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.color(.textPrimary))
+                Text(usageMismatchMessage)
+                    .font(.caption)
+                    .foregroundStyle(palette.color(.textSecondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: AppSpacing.cardRadius, style: .continuous)
+                .fill(palette.color(.accentOrange).opacity(0.12))
+        )
+    }
+
+    private var usageMismatchMessage: String {
+        if suspiciousUsageLogs.count == filteredUsageLogs.count {
+            return "The people counts match your chlorine readings on the same days — likely imported or logged by mistake. Check History → Usage, or delete them there."
+        }
+        return "\(suspiciousUsageLogs.count) session\(suspiciousUsageLogs.count == 1 ? "" : "s") match chlorine readings on the same day. Review them in History → Usage."
+    }
+
+    private var usageChartSubtitle: String {
+        let sessions = usageSessionCount
+        let sessionPhrase = "\(sessions) session\(sessions == 1 ? "" : "s") logged \(summaryPeriodPhrase)"
+        if sessions == 1, let only = filteredUsageLogs.first {
+            return "\(sessionPhrase) · \(only.numUsers) \(only.numUsers == 1 ? "person" : "people")"
+        }
+        return sessionPhrase
+    }
+
+    private var usersChart: some View {
+        let barPoints = usageBarPoints
+        return chartCard(title: "Hot tub use per day", subtitle: usageChartSubtitle) {
             if barPoints.isEmpty {
                 Text("No usage logs from \(noDataPeriodPhrase)")
                     .font(.caption)
@@ -1146,47 +1363,25 @@ struct ChartsScreenView: View {
         .appCard(palette: palette)
     }
 
-    private func chartCard<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func chartCard<Content: View>(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(palette.color(.textPrimary))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(palette.color(.textPrimary))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(palette.color(.textSecondary))
+                }
+            }
             content()
         }
         .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
-    }
-
-    private func parseYMD(_ ymd: String) -> Date? {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.date(from: ymd)
-    }
-}
-
-// MARK: - Summary ring
-
-private struct ChartsSummaryRing: View {
-    let progress: Double
-    let color: Color
-    let trackColor: Color
-    let label: String
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(trackColor, lineWidth: 8)
-            Circle()
-                .trim(from: 0, to: min(max(progress, 0), 1))
-                .stroke(color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Text(label)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(.primary)
-        }
-        .frame(width: 72, height: 72)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
     }
 }
 

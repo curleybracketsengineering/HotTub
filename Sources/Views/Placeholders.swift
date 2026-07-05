@@ -75,7 +75,7 @@ struct ActivityHubView: View {
 private extension ActivityLogKind {
     var hubTitle: String {
         switch self {
-        case .daily: "Daily log"
+        case .daily: "Water test"
         case .weekly: "Full water check"
         case .maintenance: "Service"
         case .usage: "Usage"

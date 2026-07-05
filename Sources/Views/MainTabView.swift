@@ -75,7 +75,7 @@ struct MainTabView: View {
             }
             .tag(AppTab.dashboard)
             .tabItem {
-                Label("Dashboard", systemImage: "house.fill")
+                Label("Home", systemImage: "house.fill")
             }
 
             NavigationStack {
@@ -91,7 +91,7 @@ struct MainTabView: View {
             }
             .tag(AppTab.charts)
             .tabItem {
-                Label("Charts", systemImage: "chart.xyaxis.line")
+                Label("Insights", systemImage: "chart.xyaxis.line")
             }
 
             NavigationStack {
@@ -99,7 +99,7 @@ struct MainTabView: View {
             }
             .tag(AppTab.setup)
             .tabItem {
-                Label("Setup", systemImage: "gearshape.fill")
+                Label("Settings", systemImage: "gearshape.fill")
             }
         }
         .tint(palette.color(.accentBlue))
