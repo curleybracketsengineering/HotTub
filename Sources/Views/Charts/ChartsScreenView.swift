@@ -408,7 +408,7 @@ struct ChartsScreenView: View {
             idealRange: ideal,
             defaultLower: 0,
             defaultUpper: defaultUpper,
-            padding: 0,
+            padding: 0.5,
             roundTo: 1
         )
     }
@@ -432,24 +432,29 @@ struct ChartsScreenView: View {
         padding: Double,
         roundTo: Double
     ) -> ClosedRange<Double> {
+        guard !marks.isEmpty else {
+            return defaultLower ... defaultUpper
+        }
+
         let dataMin = marks.map(\.value).min() ?? idealRange.lowerBound
         let dataMax = marks.map(\.value).max() ?? idealRange.upperBound
-        let rawLower = min(defaultLower, idealRange.lowerBound, dataMin)
-        let rawUpper = max(defaultUpper, idealRange.upperBound, dataMax)
+        let rawLower = min(dataMin, idealRange.lowerBound)
+        let rawUpper = max(dataMax, idealRange.upperBound)
+        let spanPadding = max(padding, (rawUpper - rawLower) * 0.08)
 
-        let paddedLower = roundDown(rawLower - padding, to: roundTo)
-        let paddedUpper: Double = if roundTo >= 1 {
-            if rawUpper <= defaultUpper {
-                defaultUpper
-            } else if rawUpper <= 10 {
-                ceil(rawUpper + padding)
-            } else {
-                ceil((rawUpper + padding) / 5) * 5
+        let paddedLower = roundDown(rawLower - spanPadding, to: roundTo)
+        let paddedUpper = chemistryYUpperBound(rawUpper + spanPadding, roundTo: roundTo)
+        return paddedLower ... max(paddedUpper, paddedLower + roundTo)
+    }
+
+    private func chemistryYUpperBound(_ value: Double, roundTo: Double) -> Double {
+        if roundTo >= 1 {
+            if value <= 10 {
+                return roundUp(value, to: roundTo)
             }
-        } else {
-            roundUp(rawUpper + padding, to: roundTo)
+            return ceil(value / 5) * 5
         }
-        return paddedLower ... paddedUpper
+        return roundUp(value, to: roundTo)
     }
 
     private func roundDown(_ value: Double, to step: Double) -> Double {

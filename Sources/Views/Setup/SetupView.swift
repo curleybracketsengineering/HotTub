@@ -35,6 +35,7 @@ private struct SetupSettingsForm: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
     @Environment(\.usePadLayout) private var usePadLayout
+    @Environment(\.isLandscape) private var isLandscape
     @ObservedObject private var notificationService = ReminderNotificationService.shared
 
     @State private var showImporter = false
@@ -53,16 +54,19 @@ private struct SetupSettingsForm: View {
     }
 
     var body: some View {
-        ScrollView {
-            Group {
-                if usePadLayout {
-                    padSettingsContent
-                } else {
-                    phoneSettingsContent
+        GeometryReader { geometry in
+            ScrollView {
+                Group {
+                    if usePadLayout && isLandscape {
+                        padSettingsContent
+                    } else {
+                        stackedSettingsContent
+                    }
                 }
+                .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+                .padReadableContent(maxWidth: settingsContentMaxWidth(availableWidth: geometry.size.width))
             }
-            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
-            .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .scrollDismissesKeyboard(.interactively)
         .fileImporter(
@@ -104,7 +108,17 @@ private struct SetupSettingsForm: View {
         }
     }
 
-    private var phoneSettingsContent: some View {
+    private func settingsContentMaxWidth(availableWidth: CGFloat) -> CGFloat {
+        if usePadLayout && !isLandscape {
+            return availableWidth * PadContentLayout.settingsPortraitWidthFraction
+        }
+        if usePadLayout {
+            return PadContentLayout.dashboardMaxWidth
+        }
+        return PadContentLayout.readableMaxWidth
+    }
+
+    private var stackedSettingsContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
             hotTubSection
             maintenanceScheduleSection

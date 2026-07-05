@@ -22,6 +22,7 @@ struct WeeklyLogFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.usePadLayout) private var usePadLayout
 
     let existing: WeeklyCheckLog?
 
@@ -190,7 +191,8 @@ struct WeeklyLogFormView: View {
                     AppFormNotesField(text: $notes)
                 }
             }
-            .appScrollScreenPadding()
+            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+            .padReadableContent(maxWidth: PadContentLayout.settingsMaxWidth)
         }
         .scrollDismissesKeyboard(.interactively)
         .appGroupedScreenBackground(palette)

@@ -37,16 +37,7 @@ struct DashboardView: View {
             .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .appGroupedScreenBackground(palette)
-        .navigationTitle(usePadLayout ? "" : "Home")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            if !usePadLayout {
-                ToolbarItem(placement: .topBarTrailing) {
-                    notificationBellButton
-                }
-            }
-        }
-        .toolbar(usePadLayout ? .hidden : .visible, for: .navigationBar)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             viewModel.reload(context: modelContext)
             guard !PreviewEnvironment.isActive else { return }
@@ -111,6 +102,7 @@ struct DashboardView: View {
 
     private var phoneDashboardContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
+            dashboardHeader
             statusCard
             actionsSection
             recentRecordsSection
@@ -975,10 +967,8 @@ struct DashboardView: View {
             .padding(.top, 4)
             .padding(.trailing, 4)
             .background {
-                if usePadLayout {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(palette.color(.surfaceCard))
-                }
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(palette.color(.surfaceCard))
             }
         }
         .buttonStyle(.plain)

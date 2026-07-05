@@ -60,6 +60,8 @@ extension EnvironmentValues {
 enum PadContentLayout {
     /// Single-column forms (Setup, etc.).
     static let settingsMaxWidth: CGFloat = 640
+    /// Settings on iPad portrait — centred column uses this fraction of available width.
+    static let settingsPortraitWidthFraction: CGFloat = 0.8
     static let readableMaxWidth: CGFloat = 680
     /// Wider canvas for dashboard and charts on iPad.
     static let dashboardMaxWidth: CGFloat = 960

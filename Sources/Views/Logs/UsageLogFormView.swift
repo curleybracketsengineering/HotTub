@@ -10,6 +10,7 @@ struct UsageLogFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.usePadLayout) private var usePadLayout
 
     let existing: UsageLogEntry?
 
@@ -21,6 +22,7 @@ struct UsageLogFormView: View {
     @State private var alertTitle = "Fix before saving"
     @State private var alertMessage: String?
     @State private var showAlert = false
+    @State private var presentedHelp: HelpSheetRequest?
     @Query private var settingsRows: [AppSettings]
 
     private var isCelsius: Bool {
@@ -32,33 +34,45 @@ struct UsageLogFormView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                DatePicker(
-                    "Date & time",
-                    selection: $loggedAt,
-                    in: ...FormValidation.latestLoggableMoment(),
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-            } header: {
-                Text("When")
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppSpacing.section) {
+                AppFormScreenSection(title: "When", presentedHelp: $presentedHelp) {
+                    DatePicker(
+                        "Date & time",
+                        selection: $loggedAt,
+                        in: ...FormValidation.latestLoggableMoment(),
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-            Section {
-                Stepper("People: \(numUsers)", value: $numUsers, in: 1 ... 20)
-                Stepper("Duration: \(durationMinutes) min", value: $durationMinutes, in: 5 ... 480, step: 5)
-                Stepper(
-                    "Water \(isCelsius ? "°C" : "°F"): \(waterTemp)",
-                    value: $waterTemp,
-                    in: isCelsius ? 10 ... 45 : 50 ... 110,
-                    step: 1
-                )
-            } header: {
-                Text("Session")
+                AppFormScreenSection(title: "Session", presentedHelp: $presentedHelp) {
+                    Stepper("People: \(numUsers)", value: $numUsers, in: 1 ... 20)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(palette.color(.textPrimary))
+                        .frame(minHeight: AppSpacing.minTap)
+                    Stepper("Duration: \(durationMinutes) min", value: $durationMinutes, in: 5 ... 480, step: 5)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(palette.color(.textPrimary))
+                        .frame(minHeight: AppSpacing.minTap)
+                    Stepper(
+                        "Water \(isCelsius ? "°C" : "°F"): \(waterTemp)",
+                        value: $waterTemp,
+                        in: isCelsius ? 10 ... 45 : 50 ... 110,
+                        step: 1
+                    )
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(palette.color(.textPrimary))
+                    .frame(minHeight: AppSpacing.minTap)
+                }
             }
+            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+            .padReadableContent(maxWidth: PadContentLayout.settingsMaxWidth)
         }
-        .scrollContentBackground(.hidden)
-        .background(palette.color(.backgroundSecondary))
+        .scrollDismissesKeyboard(.interactively)
+        .appGroupedScreenBackground(palette)
         .navigationTitle(existing == nil ? "Usage log" : "Edit usage")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

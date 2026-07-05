@@ -10,6 +10,7 @@ struct MaintenanceLogFormView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appPalette) private var palette
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.usePadLayout) private var usePadLayout
 
     let existing: MaintenanceLogEntry?
     let preset: MaintenanceLogPreset?
@@ -24,6 +25,7 @@ struct MaintenanceLogFormView: View {
     @State private var alertTitle = "Fix before saving"
     @State private var alertMessage: String?
     @State private var showAlert = false
+    @State private var presentedHelp: HelpSheetRequest?
 
     init(existing: MaintenanceLogEntry? = nil, preset: MaintenanceLogPreset? = nil) {
         self.existing = existing
@@ -31,47 +33,53 @@ struct MaintenanceLogFormView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                DatePicker(
-                    "Date & time",
-                    selection: $loggedAt,
-                    in: ...FormValidation.latestLoggableMoment(),
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-            } header: {
-                Text("When")
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppSpacing.section) {
+                AppFormScreenSection(title: "When", presentedHelp: $presentedHelp) {
+                    DatePicker(
+                        "Date & time",
+                        selection: $loggedAt,
+                        in: ...FormValidation.latestLoggableMoment(),
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-            Section {
-                TextField(
-                    "",
-                    text: $action,
-                    prompt: AppFormFieldStyle.prompt("Action", palette: palette),
-                    axis: .vertical
-                )
-                .lineLimit(2 ... 4)
-                .appFormFieldTextStyle(palette)
-                Toggle("Rinse filter", isOn: $filterRinsed)
-                Toggle("Filter changed", isOn: $filterChanged)
-                Toggle("Water change", isOn: $waterChange)
-            } header: {
-                Text("Service")
-            }
+                AppFormScreenSection(title: "Service", presentedHelp: $presentedHelp) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Action")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.color(.textSecondary))
+                        AppFormCardTextField(
+                            placeholder: "Action",
+                            text: $action,
+                            lineLimit: 2 ... 4,
+                            minHeight: 50
+                        )
+                    }
 
-            Section {
-                TextField(
-                    "",
-                    text: $notes,
-                    prompt: AppFormFieldStyle.prompt("Notes", palette: palette),
-                    axis: .vertical
-                )
-                .lineLimit(3 ... 6)
-                .appFormFieldTextStyle(palette)
+                    Toggle("Rinse filter", isOn: $filterRinsed)
+                        .font(.body)
+                        .tint(palette.color(.accentBlue))
+                    Toggle("Filter changed", isOn: $filterChanged)
+                        .font(.body)
+                        .tint(palette.color(.accentBlue))
+                    Toggle("Water change", isOn: $waterChange)
+                        .font(.body)
+                        .tint(palette.color(.accentBlue))
+                }
+
+                AppFormScreenSection(title: "Notes", presentedHelp: $presentedHelp) {
+                    AppFormNotesField(text: $notes)
+                }
             }
+            .appAdaptiveScrollPadding(usePadLayout: usePadLayout)
+            .padReadableContent(maxWidth: PadContentLayout.settingsMaxWidth)
         }
-        .scrollContentBackground(.hidden)
-        .background(palette.color(.backgroundSecondary))
+        .scrollDismissesKeyboard(.interactively)
+        .appGroupedScreenBackground(palette)
         .navigationTitle(existing == nil ? "Service" : "Edit service")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

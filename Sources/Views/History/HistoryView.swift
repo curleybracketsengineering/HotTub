@@ -239,6 +239,7 @@ struct HistoryView: View {
 
             if let selectedRow {
                 destination(for: selectedRow)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 historyDetailPlaceholder
             }
@@ -487,12 +488,15 @@ struct HistoryView: View {
 
     @ViewBuilder
     private func destination(for row: HistoryRow) -> some View {
-        switch row {
-        case .daily(let l): DailyLogFormView(existing: l)
-        case .weekly(let l): WeeklyLogFormView(existing: l)
-        case .maintenance(let l): MaintenanceLogFormView(existing: l)
-        case .usage(let l): UsageLogFormView(existing: l)
+        Group {
+            switch row {
+            case .daily(let l): DailyLogFormView(existing: l)
+            case .weekly(let l): WeeklyLogFormView(existing: l)
+            case .maintenance(let l): MaintenanceLogFormView(existing: l)
+            case .usage(let l): UsageLogFormView(existing: l)
+            }
         }
+        .id(row.id)
     }
 
     private func deleteContextMenu(for row: HistoryRow) -> some View {
