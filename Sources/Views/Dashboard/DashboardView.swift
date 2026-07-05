@@ -37,13 +37,16 @@ struct DashboardView: View {
             .padReadableContent(maxWidth: usePadLayout ? PadContentLayout.dashboardMaxWidth : PadContentLayout.readableMaxWidth)
         }
         .appGroupedScreenBackground(palette)
-        .navigationTitle("Home")
+        .navigationTitle(usePadLayout ? "" : "Home")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: usePadLayout ? .topBarLeading : .topBarTrailing) {
-                notificationBellButton
+            if !usePadLayout {
+                ToolbarItem(placement: .topBarTrailing) {
+                    notificationBellButton
+                }
             }
         }
+        .toolbar(usePadLayout ? .hidden : .visible, for: .navigationBar)
         .task {
             viewModel.reload(context: modelContext)
             guard !PreviewEnvironment.isActive else { return }
@@ -117,6 +120,7 @@ struct DashboardView: View {
 
     private var padDashboardContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
+            dashboardHeader
             padStatusBanner
             padMainActionButton
             padSecondaryActions
@@ -933,25 +937,51 @@ struct DashboardView: View {
         }
     }
 
+    private var dashboardHeader: some View {
+        HStack(alignment: .center, spacing: AppSpacing.control) {
+            Text("Home")
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(palette.color(.textPrimary))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer(minLength: AppSpacing.control)
+
+            notificationBellButton
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var notificationBellButton: some View {
         Button {
             Task { await handleBellTap() }
         } label: {
-            Image(systemName: "bell")
-                .font(.body.weight(.semibold))
-                .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
-                .overlay(alignment: .topTrailing) {
-                    if !viewModel.dueReminders.isEmpty {
-                        Text("\(min(viewModel.dueReminders.count, 9))")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(minWidth: 16, minHeight: 16)
-                            .background(palette.color(.accentRed))
-                            .clipShape(Circle())
-                            .offset(x: 4, y: -4)
-                    }
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell")
+                    .font(.body.weight(.semibold))
+                    .frame(width: AppSpacing.minTap, height: AppSpacing.minTap)
+
+                if !viewModel.dueReminders.isEmpty {
+                    Text("\(min(viewModel.dueReminders.count, 9))")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(palette.color(.accentRed))
+                        .clipShape(Circle())
+                        .offset(x: 4, y: -4)
                 }
+            }
+            .padding(.top, 4)
+            .padding(.trailing, 4)
+            .background {
+                if usePadLayout {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(palette.color(.surfaceCard))
+                }
+            }
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Notifications")
     }
 
