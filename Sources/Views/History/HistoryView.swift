@@ -513,6 +513,7 @@ struct HistoryView: View {
         case .usage(let l): modelContext.delete(l)
         }
         try? modelContext.save()
+        HotTubDataRefresh.notifyLocalStoreChanged()
         deleteTarget = nil
         if selectedRowID == deletedID {
             selectedRowID = combinedRows.first(where: { $0.id != deletedID })?.id

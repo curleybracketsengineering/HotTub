@@ -154,6 +154,7 @@ struct MaintenanceLogFormView: View {
 
     private func refreshReminders() {
         guard !PreviewEnvironment.isActive else { return }
+        HotTubDataRefresh.notifyLocalStoreChanged()
         Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
     }
 

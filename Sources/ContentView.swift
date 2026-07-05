@@ -34,6 +34,7 @@ struct ContentView: View {
         .appPalette(colorScheme)
         .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
             guard !PreviewEnvironment.isActive else { return }
+            HotTubDataRefresh.notifyLocalStoreChanged()
             Task { await ReminderNotificationService.shared.rescheduleFromSharedContainer() }
         }
         .onChange(of: scenePhase) { _, phase in

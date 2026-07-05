@@ -31,4 +31,28 @@ enum HistorySorting {
         if aIsFuture != bIsFuture { return !aIsFuture }
         return a > b
     }
+
+    /// Most recent log by `loggedAt`, matching History tab ordering (future dates sink below real history).
+    static func mostRecentDailyLog(_ logs: [HotTubDailyLog]) -> HotTubDailyLog? {
+        logs.min { a, b in
+            momentSortsBefore(
+                loggedAt: a.loggedAt,
+                createdAt: a.createdAt,
+                loggedAt: b.loggedAt,
+                createdAt: b.createdAt
+            )
+        }
+    }
+
+    /// Most recent weekly check by `loggedAt`, matching History tab ordering.
+    static func mostRecentWeeklyLog(_ logs: [WeeklyCheckLog]) -> WeeklyCheckLog? {
+        logs.min { a, b in
+            momentSortsBefore(
+                loggedAt: a.loggedAt,
+                createdAt: a.createdAt,
+                loggedAt: b.loggedAt,
+                createdAt: b.createdAt
+            )
+        }
+    }
 }

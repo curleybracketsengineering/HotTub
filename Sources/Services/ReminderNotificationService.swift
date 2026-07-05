@@ -133,10 +133,10 @@ final class ReminderNotificationService: NSObject, ObservableObject {
 
         let lastDaily = daily.sorted { $0.loggedAt > $1.loggedAt }.first?.loggedAt
         let lastWeekly = weekly.sorted { $0.loggedAt > $1.loggedAt }.first?.loggedAt
-        let sortedMaintenance = maintenance.sorted { $0.loggedAt > $1.loggedAt }
-        let lastFilterRinse = sortedMaintenance.first(where: \.filterRinsed)?.loggedAt
-        let lastFilterChange = sortedMaintenance.first(where: \.filterChanged)?.loggedAt
-        let lastWaterChange = sortedMaintenance.first(where: \.waterChange)?.loggedAt
+        let maintenanceDates = ReminderSchedule.lastMaintenanceDates(from: maintenance)
+        let lastFilterRinse = maintenanceDates.filterRinse
+        let lastFilterChange = maintenanceDates.filterChange
+        let lastWaterChange = maintenanceDates.waterChange
 
         await scheduleNotifications(
             settings: settings,

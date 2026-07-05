@@ -13,8 +13,10 @@ struct DashboardView: View {
     @Environment(\.appPalette) private var palette
     @Environment(\.usePadLayout) private var usePadLayout
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var notificationService = ReminderNotificationService.shared
     @StateObject private var viewModel = DashboardViewModel()
+    @Query(sort: \HotTubDailyLog.loggedAt, order: .reverse) private var dailyLogsSnapshot: [HotTubDailyLog]
 
     @State private var showNotificationSettings = false
     @State private var showNotificationsDeniedAlert = false
@@ -49,6 +51,16 @@ struct DashboardView: View {
             await notificationService.reschedule(context: modelContext)
         }
         .onAppear { viewModel.reload(context: modelContext) }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            viewModel.reload(context: modelContext)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hotTubLocalStoreDidChange)) { _ in
+            viewModel.reload(context: modelContext)
+        }
+        .onChange(of: dailyLogsSnapshot.map(dailyLogRevision)) { _, _ in
+            viewModel.reload(context: modelContext)
+        }
         .refreshable {
             viewModel.reload(context: modelContext)
             guard !PreviewEnvironment.isActive else { return }
@@ -956,6 +968,10 @@ struct DashboardView: View {
         default:
             showNotificationSettings = true
         }
+    }
+
+    private func dailyLogRevision(_ log: HotTubDailyLog) -> String {
+        "\(log.persistentModelID)-\(log.loggedAt.timeIntervalSince1970)-\(log.ph ?? -1)-\(log.sanitizerFree ?? -1)"
     }
 }
 

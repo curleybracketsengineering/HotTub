@@ -75,6 +75,7 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var isBromine: Bool = false
 
     func reload(context: ModelContext) {
+        objectWillChange.send()
         HotTubModelContainer.seedIfNeeded(in: context)
 
         let daily = (try? context.fetch(FetchDescriptor<HotTubDailyLog>())) ?? []
@@ -84,11 +85,9 @@ final class DashboardViewModel: ObservableObject {
         let settingsList = (try? context.fetch(FetchDescriptor<AppSettings>())) ?? []
         let settings = settingsList.first
 
-        let sortedDaily = daily.sorted { $0.loggedAt > $1.loggedAt }
-        let sortedWeekly = weekly.sorted { $0.loggedAt > $1.loggedAt }
-        let sortedMaintenance = maintenance.sorted { $0.loggedAt > $1.loggedAt }
-        latestDailyLog = sortedDaily.first
-        latestWeeklyLog = sortedWeekly.first
+        latestDailyLog = HistorySorting.mostRecentDailyLog(daily)
+        latestWeeklyLog = HistorySorting.mostRecentWeeklyLog(weekly)
+        let maintenanceDates = ReminderSchedule.lastMaintenanceDates(from: maintenance)
 
         isBromine = settings?.isBromine ?? false
 
@@ -112,9 +111,9 @@ final class DashboardViewModel: ObservableObject {
             settings: settings,
             lastDaily: latestDailyLog?.loggedAt,
             lastWeekly: latestWeeklyLog?.loggedAt,
-            lastFilterRinse: sortedMaintenance.first(where: \.filterRinsed)?.loggedAt,
-            lastFilterChange: sortedMaintenance.first(where: \.filterChanged)?.loggedAt,
-            lastWaterChange: sortedMaintenance.first(where: \.waterChange)?.loggedAt
+            lastFilterRinse: maintenanceDates.filterRinse,
+            lastFilterChange: maintenanceDates.filterChange,
+            lastWaterChange: maintenanceDates.waterChange
         )
     }
 

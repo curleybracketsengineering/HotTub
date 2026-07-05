@@ -166,6 +166,18 @@ enum ReminderSchedule {
         return dayDelta <= windowDays
     }
 
+    static func lastMaintenanceDates(from maintenance: [MaintenanceLogEntry]) -> (
+        filterRinse: Date?,
+        filterChange: Date?,
+        waterChange: Date?
+    ) {
+        (
+            maintenance.filter(\.filterRinsed).map(\.loggedAt).max(),
+            maintenance.filter(\.filterChanged).map(\.loggedAt).max(),
+            maintenance.filter(\.waterChange).map(\.loggedAt).max()
+        )
+    }
+
     static func buildReminders(
         settings: AppSettings?,
         lastDaily: Date?,

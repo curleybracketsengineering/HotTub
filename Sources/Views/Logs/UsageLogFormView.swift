@@ -100,7 +100,13 @@ struct UsageLogFormView: View {
         }
 
         guard commitSave() else { return }
+        notifyStoreChanged()
         dismiss()
+    }
+
+    private func notifyStoreChanged() {
+        guard !PreviewEnvironment.isActive else { return }
+        HotTubDataRefresh.notifyLocalStoreChanged()
     }
 
     @discardableResult
@@ -134,6 +140,7 @@ struct UsageLogFormView: View {
         guard let record = existing else { return }
         modelContext.delete(record)
         try? modelContext.save()
+        notifyStoreChanged()
         dismiss()
     }
 }
