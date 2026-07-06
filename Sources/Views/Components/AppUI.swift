@@ -59,6 +59,8 @@ extension View {
 struct AppSectionHeader: View {
     let title: String
     var subtitle: String?
+    /// Keeps card alignment when a sibling section has a subtitle but this one does not.
+    var reserveSubtitleLine: Bool = false
 
     @Environment(\.appPalette) private var palette
 
@@ -71,6 +73,10 @@ struct AppSectionHeader: View {
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(palette.color(.textSecondary))
+            } else if reserveSubtitleLine {
+                Text(" ")
+                    .font(.subheadline)
+                    .hidden()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -381,7 +381,10 @@ private struct SetupSettingsForm: View {
 
     private var safetySection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.control) {
-            AppSectionHeader(title: "Safety information")
+            AppSectionHeader(
+                title: "Safety information",
+                reserveSubtitleLine: usePadLayout && isLandscape
+            )
 
             SetupDisclaimerView(
                 isBromine: settings.sanitizerType == "bromine",
