@@ -66,7 +66,7 @@ struct HelpSanitizerContent: View {
                 )
                 HelpIdealRange(
                     label: "Ideal range",
-                    value: isBromine ? "3–5 ppm" : "1–3 ppm"
+                    value: "3–5 ppm"
                 )
                 HelpParagraph(text: "If too low", bold: true, topPadding: 12)
                 HelpBullet(text: "Poor sanitation")

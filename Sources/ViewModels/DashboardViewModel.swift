@@ -145,13 +145,9 @@ final class DashboardViewModel: ObservableObject {
     /// Neutral summary of last readings vs typical reference ranges — not treatment advice.
     func statusSummary(ph: Double?, sanitizer: Double?) -> String {
         if ph == nil && sanitizer == nil { return "No readings logged" }
-        let phOk = ph.map { $0 >= 7.2 && $0 <= 7.8 } ?? false
-        let sanitizerOk: Bool
-        if isBromine {
-            sanitizerOk = sanitizer.map { $0 >= 3.0 && $0 <= 5.0 } ?? false
-        } else {
-            sanitizerOk = sanitizer.map { $0 >= 1.0 && $0 <= 3.0 } ?? false
-        }
+        let phOk = ph.map(WaterChemistryRanges.phIdeal.contains) ?? false
+        let sanitizerIdeal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        let sanitizerOk = sanitizer.map(sanitizerIdeal.contains) ?? false
         let sanitizerShort = isBromine ? "bromine" : "CH"
         if phOk && sanitizerOk { return "Within typical range" }
         if !phOk && !sanitizerOk { return "pH and \(sanitizerShort) outside typical range" }
@@ -161,8 +157,8 @@ final class DashboardViewModel: ObservableObject {
 
     func sanitizerOutOfRange(_ ppm: Double?) -> Bool {
         guard let ppm else { return false }
-        if isBromine { return ppm < 3.0 || ppm > 5.0 }
-        return ppm < 1.0 || ppm > 3.0
+        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        return !ideal.contains(ppm)
     }
 
     func phOutOfRange(_ ph: Double?) -> Bool {

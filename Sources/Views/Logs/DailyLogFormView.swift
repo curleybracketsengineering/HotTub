@@ -48,7 +48,8 @@ struct DailyLogFormView: View {
     }
 
     private var freeSanitizerPlaceholder: String {
-        isBromine ? "3.0-5.0" : "1.0-3.0"
+        let range = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        return String(format: "%.1f-%.1f", range.lowerBound, range.upperBound)
     }
 
     private var weightUnit: String {

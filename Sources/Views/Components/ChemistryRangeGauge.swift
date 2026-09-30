@@ -72,6 +72,6 @@ struct ChemistryRangeGauge: View {
 
 extension WaterChemistryRanges {
     static let phDisplay: ClosedRange<Double> = 6.8 ... 8.2
-    static let chlorineDisplay: ClosedRange<Double> = 0 ... 5
+    static let chlorineDisplay: ClosedRange<Double> = 0 ... 6
     static let bromineDisplay: ClosedRange<Double> = 0 ... 6
 }

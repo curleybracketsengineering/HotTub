@@ -303,10 +303,10 @@ struct DashboardView: View {
     }
 
     private var sanitizerTargetLabel: String {
-        if viewModel.isBromine {
-            return "Target: 3.0 – 5.0 ppm"
-        }
-        return "Target: 1.0 – 3.0 ppm"
+        let range = viewModel.isBromine
+            ? WaterChemistryRanges.bromineIdeal
+            : WaterChemistryRanges.chlorineIdeal
+        return String(format: "Target: %.1f – %.1f ppm", range.lowerBound, range.upperBound)
     }
 
     private var padMainActionButton: some View {

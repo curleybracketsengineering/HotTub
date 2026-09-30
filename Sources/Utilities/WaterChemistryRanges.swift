@@ -13,7 +13,7 @@ enum WaterChemistryReadingStatus {
 
 enum WaterChemistryRanges {
     static let phIdeal: ClosedRange<Double> = 7.2 ... 7.8
-    static let chlorineIdeal: ClosedRange<Double> = 1.0 ... 3.0
+    static let chlorineIdeal: ClosedRange<Double> = 3.0 ... 5.0
     static let bromineIdeal: ClosedRange<Double> = 3.0 ... 5.0
 
     static func phStatus(_ value: Double) -> WaterChemistryReadingStatus {
@@ -24,7 +24,7 @@ enum WaterChemistryRanges {
 
     static func chlorineStatus(_ value: Double) -> WaterChemistryReadingStatus {
         if chlorineIdeal.contains(value) { return .inRange }
-        if value >= 0.5, value <= 5.0 { return .caution }
+        if value >= 2.0, value <= 6.0 { return .caution }
         return .attention
     }
 

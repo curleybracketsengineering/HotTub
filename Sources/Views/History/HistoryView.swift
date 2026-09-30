@@ -604,8 +604,8 @@ struct HistoryView: View {
 
     private func dailySanitizerWarning(_ log: HotTubDailyLog) -> Bool {
         guard let ppm = log.primarySanitizerPpm else { return false }
-        if isBromine { return ppm < 3.0 || ppm > 5.0 }
-        return ppm < 1.0 || ppm > 3.0
+        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        return !ideal.contains(ppm)
     }
 }
 

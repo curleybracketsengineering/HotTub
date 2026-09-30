@@ -56,7 +56,7 @@ struct HelpShockContent: View {
                 HelpBullet(text: "6. Test water before re-entering")
                 HelpWarningBox {
                     Text(
-                        "Common practice is NOT to enter the tub until \(sanitizerWord) levels return to safe range (under 5 ppm for chlorine, under 6 ppm for bromine). Consult product labels for specific guidance."
+                        "Common practice is NOT to enter the tub until \(sanitizerWord) levels return to a safe range (3–5 ppm for chlorine, under 6 ppm for bromine). Consult product labels for specific guidance."
                     )
                     .font(.subheadline)
                     .foregroundStyle(palette.color(.statusWarningText))

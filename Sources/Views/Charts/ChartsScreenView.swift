@@ -402,12 +402,11 @@ struct ChartsScreenView: View {
 
     private var sanitizerYDomain: ClosedRange<Double> {
         let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        let defaultUpper = isBromine ? 6.0 : 5.0
         return chemistryYDomain(
             marks: sanitizerMarks,
             idealRange: ideal,
             defaultLower: 0,
-            defaultUpper: defaultUpper,
+            defaultUpper: 6,
             padding: 0.5,
             roundTo: 1
         )
@@ -1064,7 +1063,7 @@ struct ChartsScreenView: View {
 
     private var sanitizerCompactChart: some View {
         let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        let subtitle = isBromine ? "Target 3.0–5.0 ppm" : "Target 1.0–3.0 ppm"
+        let subtitle = String(format: "Target %.1f–%.1f ppm", ideal.lowerBound, ideal.upperBound)
         return compactChemistryChart(
             title: sanitizerLabel,
             subtitle: subtitle,
@@ -1312,7 +1311,7 @@ struct ChartsScreenView: View {
             ]
         }
         return [
-            "Ideal Free Chlorine: 1.0 - 3.0 ppm",
+            "Ideal Free Chlorine: 3.0 - 5.0 ppm",
             "Free Chlorine is the active sanitizer in your water.",
             "If levels are low, add chlorine immediately.",
             "If levels are high, wait for them to drop before using.",
