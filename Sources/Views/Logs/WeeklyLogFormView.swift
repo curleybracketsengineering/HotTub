@@ -65,8 +65,16 @@ struct WeeklyLogFormView: View {
     }
 
     private var totalSanitizerPlaceholder: String {
-        let range = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        return String(format: "%.1f-%.1f", range.lowerBound, range.upperBound)
+        let range = settingsRows.first?.sanitizerTarget
+            ?? (isBromine ? WaterChemistryRanges.startingBromine : WaterChemistryRanges.startingChlorine)
+        return WaterChemistryRanges.placeholder(range)
+    }
+
+    private var combinedPlaceholder: String {
+        if isBromine { return "0.0-0.5" }
+        return WaterChemistryRanges.placeholder(
+            settingsRows.first?.combinedChlorineTarget ?? WaterChemistryRanges.startingCombinedChlorine
+        )
     }
 
     private var weightUnit: String {
@@ -94,7 +102,7 @@ struct WeeklyLogFormView: View {
                         helpRequest: .sanitizer(.combined),
                         presentedHelp: $presentedHelp,
                         systemImage: "drop.triangle",
-                        placeholder: "0.0-0.5",
+                        placeholder: combinedPlaceholder,
                         text: $combined,
                         blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 50) }
                     )

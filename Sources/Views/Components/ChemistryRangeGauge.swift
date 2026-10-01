@@ -5,10 +5,10 @@
 
 import SwiftUI
 
-/// Horizontal gauge showing a reading against an ideal band on a coloured hero surface.
+/// Horizontal gauge showing a reading against a saved target on a coloured hero surface.
 struct ChemistryRangeGauge: View {
     let value: Double?
-    let idealRange: ClosedRange<Double>
+    let targetRange: ClosedRange<Double>
     let displayRange: ClosedRange<Double>
     let status: WaterChemistryReadingStatus?
     var trackOpacity: Double = 0.22
@@ -22,8 +22,8 @@ struct ChemistryRangeGauge: View {
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            let idealStart = position(for: idealRange.lowerBound, width: width)
-            let idealEnd = position(for: idealRange.upperBound, width: width)
+            let idealStart = position(for: targetRange.lowerBound, width: width)
+            let idealEnd = position(for: targetRange.upperBound, width: width)
             let idealWidth = max(idealEnd - idealStart, 4)
 
             ZStack(alignment: .leading) {
@@ -47,6 +47,7 @@ struct ChemistryRangeGauge: View {
             .frame(maxHeight: .infinity, alignment: .center)
         }
         .frame(height: indicatorSize)
+        .accessibilityHidden(true)
     }
 
     private var indicatorColor: Color {
@@ -68,10 +69,4 @@ struct ChemistryRangeGauge: View {
         let fraction = (clamped - displayRange.lowerBound) / span
         return CGFloat(fraction) * width
     }
-}
-
-extension WaterChemistryRanges {
-    static let phDisplay: ClosedRange<Double> = 6.8 ... 8.2
-    static let chlorineDisplay: ClosedRange<Double> = 0 ... 6
-    static let bromineDisplay: ClosedRange<Double> = 0 ... 6
 }

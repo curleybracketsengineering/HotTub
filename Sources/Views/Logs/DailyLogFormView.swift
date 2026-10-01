@@ -48,8 +48,19 @@ struct DailyLogFormView: View {
     }
 
     private var freeSanitizerPlaceholder: String {
-        let range = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        return String(format: "%.1f-%.1f", range.lowerBound, range.upperBound)
+        let range = settingsRows.first?.sanitizerTarget
+            ?? (isBromine ? WaterChemistryRanges.startingBromine : WaterChemistryRanges.startingChlorine)
+        return WaterChemistryRanges.placeholder(range)
+    }
+
+    private var phPlaceholder: String {
+        WaterChemistryRanges.placeholder(settingsRows.first?.phTarget ?? WaterChemistryRanges.startingPH)
+    }
+
+    private var combinedPlaceholder: String {
+        WaterChemistryRanges.placeholder(
+            settingsRows.first?.combinedChlorineTarget ?? WaterChemistryRanges.startingCombinedChlorine
+        )
     }
 
     private var weightUnit: String {
@@ -172,7 +183,7 @@ struct DailyLogFormView: View {
                 helpRequest: .ph(.overview),
                 presentedHelp: $presentedHelp,
                 systemImage: "flask",
-                placeholder: "7.2-7.8",
+                placeholder: phPlaceholder,
                 text: $ph,
                 blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 14) }
             )
@@ -191,7 +202,7 @@ struct DailyLogFormView: View {
                     helpRequest: .sanitizer(.combined),
                     presentedHelp: $presentedHelp,
                     systemImage: "drop.triangle",
-                    placeholder: "0.0-0.5",
+                    placeholder: combinedPlaceholder,
                     text: $sanitizerCombined,
                     blurValidator: { FormValidation.blurRangeError(for: $0, min: 0, max: 20) }
                 )

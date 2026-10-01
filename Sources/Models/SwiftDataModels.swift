@@ -37,6 +37,17 @@ final class AppSettings {
     var reminderWaterChangeEnabled: Bool = false
     var reminderWaterChangeDays: Int = 90
 
+    /// Set when the first-run target screen is saved. Home stays closed until then.
+    var targetsConfirmed: Bool = false
+    var phTargetMinimum: Double = 7.2
+    var phTargetMaximum: Double = 7.8
+    var chlorineTargetMinimum: Double = 3.0
+    var chlorineTargetMaximum: Double = 5.0
+    var bromineTargetMinimum: Double = 3.0
+    var bromineTargetMaximum: Double = 5.0
+    var combinedChlorineTargetMinimum: Double = 0.0
+    var combinedChlorineTargetMaximum: Double = 0.5
+
     init(
         settingsKey: String = "default",
         capacity: Double = 1000,
@@ -94,6 +105,43 @@ final class AppSettings {
     /// User-facing name for the selected sanitizer (Chlorine / Bromine).
     var sanitizerDisplayName: String {
         isBromine ? "Bromine" : "Chlorine"
+    }
+
+    var phTarget: ClosedRange<Double> {
+        WaterChemistryRanges.storedRange(
+            minimum: phTargetMinimum,
+            maximum: phTargetMaximum,
+            fallback: WaterChemistryRanges.startingPH
+        )
+    }
+
+    var chlorineTarget: ClosedRange<Double> {
+        WaterChemistryRanges.storedRange(
+            minimum: chlorineTargetMinimum,
+            maximum: chlorineTargetMaximum,
+            fallback: WaterChemistryRanges.startingChlorine
+        )
+    }
+
+    var bromineTarget: ClosedRange<Double> {
+        WaterChemistryRanges.storedRange(
+            minimum: bromineTargetMinimum,
+            maximum: bromineTargetMaximum,
+            fallback: WaterChemistryRanges.startingBromine
+        )
+    }
+
+    var combinedChlorineTarget: ClosedRange<Double> {
+        WaterChemistryRanges.storedRange(
+            minimum: combinedChlorineTargetMinimum,
+            maximum: combinedChlorineTargetMaximum,
+            fallback: WaterChemistryRanges.startingCombinedChlorine
+        )
+    }
+
+    /// Free chlorine or bromine, depending on the saved sanitizer.
+    var sanitizerTarget: ClosedRange<Double> {
+        isBromine ? bromineTarget : chlorineTarget
     }
 }
 

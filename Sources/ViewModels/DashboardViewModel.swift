@@ -73,6 +73,8 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var recentRecords: [DashboardActivity] = []
     @Published private(set) var dueReminders: [HomeReminder] = []
     @Published private(set) var isBromine: Bool = false
+    @Published private(set) var phTarget: ClosedRange<Double> = WaterChemistryRanges.startingPH
+    @Published private(set) var sanitizerTarget: ClosedRange<Double> = WaterChemistryRanges.startingChlorine
 
     func reload(context: ModelContext) {
         objectWillChange.send()
@@ -90,6 +92,9 @@ final class DashboardViewModel: ObservableObject {
         let maintenanceDates = ReminderSchedule.lastMaintenanceDates(from: maintenance)
 
         isBromine = settings?.isBromine ?? false
+        phTarget = settings?.phTarget ?? WaterChemistryRanges.startingPH
+        sanitizerTarget = settings?.sanitizerTarget
+            ?? (isBromine ? WaterChemistryRanges.startingBromine : WaterChemistryRanges.startingChlorine)
 
         var allRecords: [DashboardActivity] = []
         allRecords.append(contentsOf: daily.map { .daily($0) })
@@ -128,42 +133,106 @@ final class DashboardViewModel: ObservableObject {
         reload(context: context)
     }
 
-    /// Short hero headline for the dashboard status card.
-    func heroHeadline(ph: Double?, sanitizer: Double?, hasData: Bool, isDailyDue: Bool) -> String {
-        if !hasData { return "Check your water today" }
-        if isDailyDue { return "Water test due today" }
-        if readingsAreBalanced(ph: ph, sanitizer: sanitizer) { return "Water looks good" }
-        if phOutOfRange(ph), sanitizerOutOfRange(sanitizer) { return "Water needs attention" }
-        if phOutOfRange(ph) { return "pH needs attention" }
-        return "\(isBromine ? "Bromine" : "Chlorine") needs attention"
+    var sanitizerReadingName: String {
+        isBromine ? "Bromine" : "Free chlorine"
     }
 
-    func readingsAreBalanced(ph: Double?, sanitizer: Double?) -> Bool {
-        !phOutOfRange(ph) && !sanitizerOutOfRange(sanitizer)
+    var phDisplayRange: ClosedRange<Double> {
+        WaterChemistryRanges.displayRange(covering: phTarget, fallback: WaterChemistryRanges.phDisplay)
     }
 
-    /// Neutral summary of last readings vs typical reference ranges — not treatment advice.
-    func statusSummary(ph: Double?, sanitizer: Double?) -> String {
-        if ph == nil && sanitizer == nil { return "No readings logged" }
-        let phOk = ph.map(WaterChemistryRanges.phIdeal.contains) ?? false
-        let sanitizerIdeal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        let sanitizerOk = sanitizer.map(sanitizerIdeal.contains) ?? false
-        let sanitizerShort = isBromine ? "bromine" : "CH"
-        if phOk && sanitizerOk { return "Within typical range" }
-        if !phOk && !sanitizerOk { return "pH and \(sanitizerShort) outside typical range" }
-        if !phOk { return "pH outside typical range" }
-        return "\(isBromine ? "Bromine" : "CH") outside typical range"
+    var sanitizerDisplayRange: ClosedRange<Double> {
+        let fallback = isBromine ? WaterChemistryRanges.bromineDisplay : WaterChemistryRanges.chlorineDisplay
+        return WaterChemistryRanges.displayRange(covering: sanitizerTarget, fallback: fallback)
     }
 
-    func sanitizerOutOfRange(_ ppm: Double?) -> Bool {
-        guard let ppm else { return false }
-        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        return !ideal.contains(ppm)
+    func phStatus(_ ph: Double?) -> RangeStatus {
+        RangeStatus(value: ph, target: phTarget)
     }
 
-    func phOutOfRange(_ ph: Double?) -> Bool {
-        guard let ph else { return false }
-        return ph < 7.2 || ph > 7.8
+    func sanitizerStatus(_ ppm: Double?) -> RangeStatus {
+        RangeStatus(value: ppm, target: sanitizerTarget)
+    }
+
+    /// Hero copy for the latest daily readings. An out-of-range value outranks a due reminder.
+    func homeStatus(log: HotTubDailyLog?) -> HomeStatusPresentation {
+        let phValue = log?.ph
+        let sanitizerValue = log?.primarySanitizerPpm
+        let phState = phStatus(phValue)
+        let sanitizerState = sanitizerStatus(sanitizerValue)
+        let hasData = log != nil
+        let isDue = hasData && readingsAreStale
+        let outside = outsideReadings(ph: phState, sanitizer: sanitizerState)
+
+        let headline: String
+        let dueSecondary: String?
+        if outside.count > 1 {
+            headline = "Some readings are outside your target ranges"
+            dueSecondary = isDue ? "Water test due today" : nil
+        } else if let only = outside.first {
+            headline = "\(only.name) is \(only.status.relationPhrase)"
+            dueSecondary = isDue ? "Water test due today" : nil
+        } else if !hasData {
+            headline = "No readings recorded yet"
+            dueSecondary = nil
+        } else if phState == .unknown && sanitizerState == .unknown {
+            headline = "No chemistry readings recorded"
+            dueSecondary = isDue ? "Water test due today" : nil
+        } else if isDue {
+            headline = "Water test due today"
+            dueSecondary = nil
+        } else {
+            headline = "All recorded readings are within your target ranges"
+            dueSecondary = nil
+        }
+
+        let subtitle: String?
+        if let log {
+            subtitle = "Last water test \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))"
+        } else {
+            subtitle = nil
+        }
+
+        let readingsOutsideTarget = !outside.isEmpty
+        return HomeStatusPresentation(
+            headline: headline,
+            subtitle: subtitle,
+            comparisonCaption: "Compared with the targets you saved",
+            dueSecondary: dueSecondary,
+            footer: readingsOutsideTarget
+                ? "Use your manufacturer and chemical product guidance when deciding what to do next."
+                : "This app records your readings and compares them with the targets you saved.",
+            readingsOutsideTarget: readingsOutsideTarget,
+            hasData: hasData,
+            isDue: isDue,
+            ph: HomeReadingPresentation(
+                name: "pH",
+                valueText: phValue.map { String(format: "%.1f", $0) } ?? "--",
+                target: phTarget,
+                unit: "",
+                status: phState,
+                displayRange: phDisplayRange
+            ),
+            sanitizer: HomeReadingPresentation(
+                name: sanitizerReadingName,
+                valueText: sanitizerValue.map { String(format: "%.1f ppm", $0) } ?? "-- ppm",
+                target: sanitizerTarget,
+                unit: "ppm",
+                status: sanitizerState,
+                displayRange: sanitizerDisplayRange
+            )
+        )
+    }
+
+    private func outsideReadings(ph: RangeStatus, sanitizer: RangeStatus) -> [(name: String, status: RangeStatus)] {
+        var rows: [(name: String, status: RangeStatus)] = []
+        if sanitizer.isOutsideTarget {
+            rows.append((sanitizerReadingName, sanitizer))
+        }
+        if ph.isOutsideTarget {
+            rows.append(("pH", ph))
+        }
+        return rows
     }
 
     /// True when the latest daily log is more than the configured interval old.
@@ -171,4 +240,42 @@ final class DashboardViewModel: ObservableObject {
         guard let lastDaily = latestDailyLog?.loggedAt else { return false }
         return ReminderSchedule.isDailyDue(lastLog: lastDaily)
     }
+}
+
+struct HomeReadingPresentation: Equatable {
+    let name: String
+    let valueText: String
+    let target: ClosedRange<Double>
+    let unit: String
+    let status: RangeStatus
+    let displayRange: ClosedRange<Double>
+
+    var accessibilityText: String {
+        let targetBounds = "\(WaterChemistryRanges.formatBound(target.lowerBound)) to \(WaterChemistryRanges.formatBound(target.upperBound))"
+        switch status {
+        case .unknown:
+            return "\(name), no reading recorded. Your saved target is \(targetBounds)\(unit == "ppm" ? " parts per million" : "")."
+        case .below, .within, .above:
+            let spokenValue = unit == "ppm"
+                ? valueText.replacingOccurrences(of: "ppm", with: "parts per million")
+                : valueText
+            let relation = status == .within
+                ? "within"
+                : (status == .below ? "below" : "above")
+            return "\(name) \(spokenValue), \(relation) your saved target of \(targetBounds)\(unit == "ppm" ? " parts per million" : "")."
+        }
+    }
+}
+
+struct HomeStatusPresentation: Equatable {
+    let headline: String
+    let subtitle: String?
+    let comparisonCaption: String
+    let dueSecondary: String?
+    let footer: String
+    let readingsOutsideTarget: Bool
+    let hasData: Bool
+    let isDue: Bool
+    let ph: HomeReadingPresentation
+    let sanitizer: HomeReadingPresentation
 }

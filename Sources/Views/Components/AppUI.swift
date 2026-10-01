@@ -38,11 +38,16 @@ extension View {
     func appCard(
         palette: AppPalette,
         radius: CGFloat = AppSpacing.cardRadius,
-        padding: CGFloat = 16
+        padding: CGFloat = 16,
+        fillsHeight: Bool = false
     ) -> some View {
         self
             .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: fillsHeight ? .infinity : nil,
+                alignment: fillsHeight ? .topLeading : .leading
+            )
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(palette.color(.surfaceCard))

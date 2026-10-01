@@ -43,9 +43,9 @@ private enum ChemistryRangePosition {
 
     var currentStatusPhrase: String {
         switch self {
-        case .inRange: "Currently in range"
-        case .below: "Currently below range"
-        case .above: "Currently above range"
+        case .inRange: "Within your target range"
+        case .below: "Below your target range"
+        case .above: "Above your target range"
         }
     }
 }
@@ -69,6 +69,8 @@ struct ChartsScreenView: View {
     @State private var viewMonth: Date = Date()
     /// Monday starting the visible calendar week (7-day window ends that Sunday or today).
     @State private var sevenDayWeekStart: Date = ChartsWeekCalendar.mondayContaining(Date())
+    /// 0 is the 3-month window ending today. Each step moves the window back another 3 months.
+    @State private var threeMonthWindowIndex: Int = 0
     @State private var presentedHelp: HelpSheetRequest?
 
     private var isBromine: Bool {
@@ -77,6 +79,15 @@ struct ChartsScreenView: View {
 
     private var isMetric: Bool {
         settingsRows.first?.measurementSystem != "imperial"
+    }
+
+    private var phTarget: ClosedRange<Double> {
+        settingsRows.first?.phTarget ?? WaterChemistryRanges.startingPH
+    }
+
+    private var sanitizerTarget: ClosedRange<Double> {
+        settingsRows.first?.sanitizerTarget
+            ?? (isBromine ? WaterChemistryRanges.startingBromine : WaterChemistryRanges.startingChlorine)
     }
 
     private var sanitizerLabel: String {
@@ -133,17 +144,46 @@ struct ChartsScreenView: View {
         usePadLayout ? ChartRange.allCases : [.last7Days, .month]
     }
 
+    private var currentThreeMonthAnchor: Date {
+        ChartsThreeMonthWindow.anchorMonth(containing: todayStart)
+    }
+
+    private var earliestThreeMonthIndex: Int {
+        ChartsThreeMonthWindow.earliestIndex(
+            earliest: earliestChartLogDate,
+            anchorMonth: currentThreeMonthAnchor
+        )
+    }
+
+    private var threeMonthWindowIndices: [Int] {
+        Array((earliestThreeMonthIndex...0).reversed())
+    }
+
+    private var isViewingCurrentThreeMonths: Bool {
+        threeMonthWindowIndex == 0
+    }
+
+    private var canRetreatThreeMonthWindow: Bool {
+        threeMonthWindowIndex > earliestThreeMonthIndex
+    }
+
+    private var canAdvanceThreeMonthWindow: Bool {
+        threeMonthWindowIndex < 0
+    }
+
+    private var threeMonthBounds: (start: Date, end: Date) {
+        threeMonthBounds(for: threeMonthWindowIndex)
+    }
+
     private var threeMonthsStart: Date {
-        let cal = Calendar.current
-        let anchor = cal.date(from: cal.dateComponents([.year, .month], from: todayStart)) ?? todayStart
-        return cal.date(byAdding: .month, value: -2, to: anchor) ?? anchor
+        threeMonthBounds.start
     }
 
     private var threeMonthsDataEnd: Date {
-        todayStart
+        threeMonthBounds.end
     }
 
-    /// Last day on the 3-month chart x-axis (today, like the current-month chart).
+    /// Last day on the 3-month chart x-axis (today for the current window).
     private var threeMonthsChartEnd: Date {
         threeMonthsDataEnd
     }
@@ -155,11 +195,7 @@ struct ChartsScreenView: View {
     }
 
     private var threeMonthsLabel: String {
-        let startFormatter = DateFormatter()
-        startFormatter.dateFormat = "d MMM"
-        let endFormatter = DateFormatter()
-        endFormatter.dateFormat = "d MMM yyyy"
-        return "\(startFormatter.string(from: threeMonthsStart)) – \(endFormatter.string(from: threeMonthsDataEnd))"
+        formattedThreeMonthRange(start: threeMonthsStart, end: threeMonthsDataEnd)
     }
 
     private var emptyStatePeriodTitle: String {
@@ -169,7 +205,7 @@ struct ChartsScreenView: View {
         case .month:
             return "No data for \(monthLabel)"
         case .threeMonths:
-            return "No data in the last 3 months"
+            return isViewingCurrentThreeMonths ? "No data in the last 3 months" : "No data in this period"
         }
     }
 
@@ -180,7 +216,7 @@ struct ChartsScreenView: View {
         case .month:
             return "this month"
         case .threeMonths:
-            return "the last 3 months"
+            return isViewingCurrentThreeMonths ? "the last 3 months" : "this period"
         }
     }
 
@@ -401,7 +437,7 @@ struct ChartsScreenView: View {
     }
 
     private var sanitizerYDomain: ClosedRange<Double> {
-        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
+        let ideal = sanitizerTarget
         return chemistryYDomain(
             marks: sanitizerMarks,
             idealRange: ideal,
@@ -415,7 +451,7 @@ struct ChartsScreenView: View {
     private var phYDomain: ClosedRange<Double> {
         chemistryYDomain(
             marks: phMarks,
-            idealRange: WaterChemistryRanges.phIdeal,
+            idealRange: phTarget,
             defaultLower: 6.8,
             defaultUpper: 8.2,
             padding: 0.2,
@@ -500,13 +536,11 @@ struct ChartsScreenView: View {
         guard !logs.isEmpty else { return nil }
 
         let phValues = logs.compactMap(\.ph)
-        let phIdeal = WaterChemistryRanges.phIdeal
+        let phIdeal = phTarget
         let phLowCount = phValues.filter { $0 < phIdeal.lowerBound }.count
         let phHighCount = phValues.filter { $0 > phIdeal.upperBound }.count
 
-        let ideal = isBromine
-            ? WaterChemistryRanges.bromineIdeal
-            : WaterChemistryRanges.chlorineIdeal
+        let ideal = sanitizerTarget
         let sanitizerValues = logs.compactMap(\.primarySanitizerPpm)
         let sanitizerLowCount = sanitizerValues.filter { $0 < ideal.lowerBound }.count
         let sanitizerHighCount = sanitizerValues.filter { $0 > ideal.upperBound }.count
@@ -529,7 +563,7 @@ struct ChartsScreenView: View {
         case .last7Days:
             return "this week"
         case .threeMonths:
-            return "in the last 3 months"
+            return isViewingCurrentThreeMonths ? "in the last 3 months" : "in this period"
         }
     }
 
@@ -704,9 +738,9 @@ struct ChartsScreenView: View {
         let outOfRangeCount = lowCount + highCount
         let latestValue = phMarks.last?.value
         let currentPosition = latestValue.map {
-            ChemistryRangePosition.from(value: $0, ideal: WaterChemistryRanges.phIdeal)
+            ChemistryRangePosition.from(value: $0, ideal: phTarget)
         }
-        let currentStatus = latestValue.map(WaterChemistryRanges.phStatus)
+        let currentStatus = latestValue.map { WaterChemistryRanges.readingStatus(value: $0, target: phTarget) }
         let currentlyInRange = currentPosition == .inRange
         let accentColor = summaryAccentColor(for: currentStatus, outOfRangeCount: outOfRangeCount)
 
@@ -734,17 +768,15 @@ struct ChartsScreenView: View {
 
     private func phSummaryTitle(currentPosition: ChemistryRangePosition?) -> String {
         switch currentPosition {
-        case .inRange, nil: return "pH in range"
-        case .below: return "Low pH"
-        case .above: return "High pH"
+        case .inRange, nil: return "pH within target"
+        case .below: return "pH below target"
+        case .above: return "pH above target"
         }
     }
 
     private func sanitizerSummaryCard(lowCount: Int, highCount: Int) -> some View {
         let outOfRangeCount = lowCount + highCount
-        let ideal = isBromine
-            ? WaterChemistryRanges.bromineIdeal
-            : WaterChemistryRanges.chlorineIdeal
+        let ideal = sanitizerTarget
         let latestValue = sanitizerMarks.last?.value
         let currentPosition = latestValue.map {
             ChemistryRangePosition.from(value: $0, ideal: ideal)
@@ -776,11 +808,10 @@ struct ChartsScreenView: View {
     }
 
     private func sanitizerSummaryTitle(currentPosition: ChemistryRangePosition?) -> String {
-        let name = sanitizerLabel.lowercased()
         switch currentPosition {
-        case .inRange, nil: return "\(sanitizerLabel) in range"
-        case .below: return "Low \(name)"
-        case .above: return "High \(name)"
+        case .inRange, nil: return "\(sanitizerLabel) within target"
+        case .below: return "\(sanitizerLabel) below target"
+        case .above: return "\(sanitizerLabel) above target"
         }
     }
 
@@ -870,7 +901,7 @@ struct ChartsScreenView: View {
     private var tipBannerText: AttributedString {
         var tip = AttributedString("Tip ")
         tip.font = .caption.weight(.semibold)
-        var body = AttributedString("Keep pH between 7.2 and 7.8 for best sanitizer effectiveness.")
+        var body = AttributedString("Your saved pH target is \(WaterChemistryRanges.targetLabel(phTarget)).")
         body.font = .caption
         return tip + body
     }
@@ -889,17 +920,77 @@ struct ChartsScreenView: View {
             case .last7Days:
                 sevenDayNav
             case .threeMonths:
-                threeMonthsPeriodLabel
+                threeMonthsPeriodControl
             }
         }
     }
 
-    private var threeMonthsPeriodLabel: some View {
-        Text(threeMonthsLabel)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(palette.color(.textPrimary))
+    @ViewBuilder
+    private var threeMonthsPeriodControl: some View {
+        if threeMonthWindowIndices.count > 1 {
+            threeMonthsNav
+        } else {
+            Text(threeMonthsLabel)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(palette.color(.textPrimary))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+        }
+    }
+
+    private var threeMonthsNav: some View {
+        HStack(spacing: 8) {
+            Button {
+                shiftThreeMonthWindow(by: -1)
+            } label: {
+                Image(systemName: "chevron.left.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(canRetreatThreeMonthWindow ? palette.color(.accentBlue) : palette.color(.separator))
+            }
+            .disabled(!canRetreatThreeMonthWindow)
+            .accessibilityLabel("Earlier 3 months")
+
+            threeMonthWindowPicker
+                .frame(maxWidth: .infinity)
+
+            Button {
+                shiftThreeMonthWindow(by: 1)
+            } label: {
+                Image(systemName: "chevron.right.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(canAdvanceThreeMonthWindow ? palette.color(.accentBlue) : palette.color(.separator))
+            }
+            .disabled(!canAdvanceThreeMonthWindow)
+            .accessibilityLabel("Later 3 months")
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var threeMonthWindowPicker: some View {
+        Menu {
+            ForEach(threeMonthWindowIndices, id: \.self) { index in
+                Button {
+                    threeMonthWindowIndex = index
+                } label: {
+                    if index == threeMonthWindowIndex {
+                        Label(threeMonthWindowLabel(for: index), systemImage: "checkmark")
+                    } else {
+                        Text(threeMonthWindowLabel(for: index))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(threeMonthsLabel)
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(palette.color(.accentBlue))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("3 month period, \(threeMonthsLabel)")
     }
 
     private func rangePill(_ range: ChartRange) -> some View {
@@ -908,6 +999,8 @@ struct ChartsScreenView: View {
             chartRange = range
             if range == .last7Days {
                 sevenDayWeekStart = currentWeekMonday
+            } else if range == .threeMonths {
+                threeMonthWindowIndex = 0
             }
         } label: {
             Text(range.rawValue)
@@ -1048,6 +1141,58 @@ struct ChartsScreenView: View {
         return "Week of \(formatter.string(from: weekStart))"
     }
 
+    private var earliestChartLogDate: Date? {
+        let daily = allDaily.map(\.loggedAt).min()
+        let usage = allUsage.map(\.loggedAt).min()
+        switch (daily, usage) {
+        case let (dailyDate?, usageDate?):
+            return min(dailyDate, usageDate)
+        case let (dailyDate?, nil):
+            return dailyDate
+        case let (nil, usageDate?):
+            return usageDate
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private func threeMonthBounds(for index: Int) -> (start: Date, end: Date) {
+        let lastMonth = ChartsThreeMonthWindow.lastMonthStart(
+            index: index,
+            anchorMonth: currentThreeMonthAnchor
+        )
+        let start = ChartsThreeMonthWindow.start(lastMonthStart: lastMonth)
+        let end = ChartsThreeMonthWindow.dataEnd(
+            lastMonthStart: lastMonth,
+            index: index,
+            today: todayStart
+        )
+        return (start, end)
+    }
+
+    private func threeMonthWindowLabel(for index: Int) -> String {
+        let bounds = threeMonthBounds(for: index)
+        return formattedThreeMonthRange(start: bounds.start, end: bounds.end)
+    }
+
+    private func formattedThreeMonthRange(start: Date, end: Date) -> String {
+        let calendar = Calendar.current
+        let startFormatter = DateFormatter()
+        let endFormatter = DateFormatter()
+        endFormatter.dateFormat = "d MMM yyyy"
+        if calendar.component(.year, from: start) == calendar.component(.year, from: end) {
+            startFormatter.dateFormat = "d MMM"
+        } else {
+            startFormatter.dateFormat = "d MMM yyyy"
+        }
+        return "\(startFormatter.string(from: start)) – \(endFormatter.string(from: end))"
+    }
+
+    private func shiftThreeMonthWindow(by steps: Int) {
+        let next = threeMonthWindowIndex + steps
+        threeMonthWindowIndex = min(0, max(earliestThreeMonthIndex, next))
+    }
+
     private func shiftSevenDayWindow(by days: Int) {
         let cal = Calendar.current
         guard let shifted = cal.date(byAdding: .day, value: days, to: selectedWeekStart) else { return }
@@ -1062,8 +1207,8 @@ struct ChartsScreenView: View {
     }
 
     private var sanitizerCompactChart: some View {
-        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        let subtitle = String(format: "Target %.1f–%.1f ppm", ideal.lowerBound, ideal.upperBound)
+        let ideal = sanitizerTarget
+        let subtitle = "Your target \(WaterChemistryRanges.targetLabel(ideal, unit: "ppm"))"
         return compactChemistryChart(
             title: sanitizerLabel,
             subtitle: subtitle,
@@ -1077,31 +1222,26 @@ struct ChartsScreenView: View {
     }
 
     private func sanitizerReadingStatus(for value: Double) -> WaterChemistryReadingStatus {
-        if isBromine {
-            WaterChemistryRanges.bromineStatus(value)
-        } else {
-            WaterChemistryRanges.chlorineStatus(value)
-        }
+        WaterChemistryRanges.readingStatus(value: value, target: sanitizerTarget)
     }
 
     private var phCompactChart: some View {
         compactChemistryChart(
             title: "pH",
-            subtitle: "Target 7.2–7.8",
+            subtitle: "Your target \(WaterChemistryRanges.targetLabel(phTarget))",
             marks: phMarks,
-            idealRange: WaterChemistryRanges.phIdeal,
+            idealRange: phTarget,
             yDomain: phYDomain,
             yAxisFormat: { String(format: "%.1f", $0) },
-            status: WaterChemistryRanges.phStatus,
+            status: { WaterChemistryRanges.readingStatus(value: $0, target: phTarget) },
             emptyMessage: "No pH readings in \(noDataPeriodPhrase)."
         )
     }
 
     private var chemistryStatusLegend: some View {
         HStack(spacing: 16) {
-            statusLegendItem(color: palette.color(.accentGreen), label: "In range")
-            statusLegendItem(color: palette.color(.accentOrange), label: "Slightly outside")
-            statusLegendItem(color: palette.color(.accentRed), label: "Needs attention")
+            statusLegendItem(color: palette.color(.accentGreen), label: "Within range")
+            statusLegendItem(color: palette.color(.accentOrange), label: "Outside range")
         }
         .font(.caption)
         .foregroundStyle(palette.color(.textSecondary))
@@ -1144,8 +1284,8 @@ struct ChartsScreenView: View {
                         RectangleMark(
                             xStart: .value("Start", chartXDomain.lowerBound, unit: .day),
                             xEnd: .value("End", chartXBandEnd, unit: .day),
-                            yStart: .value("Ideal low", idealRange.lowerBound),
-                            yEnd: .value("Ideal high", idealRange.upperBound)
+                            yStart: .value("Target low", idealRange.lowerBound),
+                            yEnd: .value("Target high", idealRange.upperBound)
                         )
                         .foregroundStyle(palette.color(.statusSuccessFill))
 
@@ -1302,28 +1442,19 @@ struct ChartsScreenView: View {
     }
 
     private var sanitizerGuideBullets: [String] {
-        if isBromine {
-            return [
-                "Ideal Bromine: 3.0 - 5.0 ppm",
-                "Bromine is the active sanitizer in your water.",
-                "If levels are low, add bromine immediately.",
-                "If levels are high, wait for them to drop before using.",
-            ]
-        }
+        let target = WaterChemistryRanges.targetLabel(sanitizerTarget, unit: "ppm")
         return [
-            "Ideal Free Chlorine: 3.0 - 5.0 ppm",
-            "Free Chlorine is the active sanitizer in your water.",
-            "If levels are low, add chlorine immediately.",
-            "If levels are high, wait for them to drop before using.",
+            "Your target: \(target)",
+            "The band on the chart is the \(sanitizerLabel.lowercased()) target you saved.",
+            "Points outside that band are below or above your target.",
         ]
     }
 
     private var phGuideBullets: [String] {
         [
-            "Ideal pH: 7.2 - 7.8",
-            "pH affects sanitizer effectiveness and water comfort.",
-            "Too low (acidic): Add pH Up to raise levels.",
-            "Too high (basic): Add pH Down to lower levels.",
+            "Your target: \(WaterChemistryRanges.targetLabel(phTarget))",
+            "The band on the chart is the pH target you saved.",
+            "Points outside that band are below or above your target.",
         ]
     }
 
@@ -1409,5 +1540,43 @@ private enum ChartsWeekCalendar {
 
     static func weekDataEnd(forWeekStarting monday: Date, cappedTo today: Date) -> Date {
         min(weekSunday(forWeekStarting: monday), Calendar.current.startOfDay(for: today))
+    }
+}
+
+// MARK: - Three-month window
+
+private enum ChartsThreeMonthWindow {
+    static func anchorMonth(containing date: Date, calendar: Calendar = .current) -> Date {
+        let start = calendar.startOfDay(for: date)
+        return calendar.date(from: calendar.dateComponents([.year, .month], from: start)) ?? start
+    }
+
+    static func lastMonthStart(index: Int, anchorMonth: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .month, value: index * 3, to: anchorMonth) ?? anchorMonth
+    }
+
+    static func start(lastMonthStart: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .month, value: -2, to: lastMonthStart) ?? lastMonthStart
+    }
+
+    /// Inclusive last day. The current window ends today; earlier windows end on the last day of their final month.
+    static func dataEnd(lastMonthStart: Date, index: Int, today: Date, calendar: Calendar = .current) -> Date {
+        if index >= 0 {
+            return calendar.startOfDay(for: today)
+        }
+        guard let interval = calendar.dateInterval(of: .month, for: lastMonthStart) else {
+            return lastMonthStart
+        }
+        let last = calendar.date(byAdding: .day, value: -1, to: interval.end) ?? interval.start
+        return calendar.startOfDay(for: last)
+    }
+
+    /// Window index that contains the earliest log. 0 when every reading is already in the current window.
+    static func earliestIndex(earliest: Date?, anchorMonth: Date, calendar: Calendar = .current) -> Int {
+        guard let earliest else { return 0 }
+        let earliestMonth = Self.anchorMonth(containing: earliest, calendar: calendar)
+        let monthDelta = calendar.dateComponents([.month], from: earliestMonth, to: anchorMonth).month ?? 0
+        if monthDelta <= 2 { return 0 }
+        return -Int(ceil(Double(monthDelta - 2) / 3.0))
     }
 }

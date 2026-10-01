@@ -107,6 +107,7 @@ struct DashboardView: View {
             actionsSection
             recentRecordsSection
             remindersSection
+            homeFooter
         }
     }
 
@@ -124,38 +125,24 @@ struct DashboardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            padFooter
+            homeFooter
         }
     }
 
     // MARK: - iPad hero banner
 
     private var padStatusBanner: some View {
-        let log = viewModel.latestDailyLog
-        let hasData = log != nil
-        let isStale = viewModel.readingsAreStale
-        let isDailyDue = log == nil || isStale
-        let inRange = isWithinTypicalRange(log)
-        let sanitizerIdeal = viewModel.isBromine
-            ? WaterChemistryRanges.bromineIdeal
-            : WaterChemistryRanges.chlorineIdeal
-        let sanitizerDisplayRange = viewModel.isBromine
-            ? WaterChemistryRanges.bromineDisplay
-            : WaterChemistryRanges.chlorineDisplay
+        let status = viewModel.homeStatus(log: viewModel.latestDailyLog)
 
         return ZStack {
-            statusCardGradient(
-                hasData: hasData,
-                isStale: isStale || isDailyDue,
-                inRange: inRange
-            )
+            statusCardGradient(for: status)
 
             PadHeroWaveDecoration()
                 .opacity(0.18)
 
             HStack(alignment: .center, spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "drop.fill")
                             .font(.title2)
                             .foregroundStyle(palette.color(.accentBlue))
@@ -163,49 +150,7 @@ struct DashboardView: View {
                             .background(Color.white)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(
-                                viewModel.heroHeadline(
-                                    ph: log?.ph,
-                                    sanitizer: log?.primarySanitizerPpm,
-                                    hasData: hasData,
-                                    isDailyDue: isDailyDue
-                                )
-                            )
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(palette.color(.onAccent))
-
-                            if let log {
-                                Text("Last water test \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(palette.color(.onAccent).opacity(0.8))
-                            } else {
-                                Text("No readings logged yet")
-                                    .font(.subheadline)
-                                    .foregroundStyle(palette.color(.onAccent).opacity(0.8))
-                            }
-                        }
-                    }
-
-                    if isDailyDue {
-                        NavigationLink {
-                            DailyLogFormView()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "calendar")
-                                    .font(.caption.weight(.semibold))
-                                Text("Due today")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .foregroundStyle(palette.color(.accentBlue))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.white)
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    } else if hasData {
-                        padHeroStatusBadge(inRange: inRange)
+                        HomeStatusCopy(status: status, palette: palette, linksDueReminder: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -213,33 +158,13 @@ struct DashboardView: View {
 
                 padHeroDivider
 
-                padHeroReadingColumn(
-                    label: viewModel.isBromine ? "Bromine" : "Chlorine",
-                    value: log?.primarySanitizerPpm,
-                    valueText: sanitizerDisplay(log),
-                    targetLabel: sanitizerTargetLabel,
-                    idealRange: sanitizerIdeal,
-                    displayRange: sanitizerDisplayRange,
-                    status: log?.primarySanitizerPpm.map {
-                        viewModel.isBromine
-                            ? WaterChemistryRanges.bromineStatus($0)
-                            : WaterChemistryRanges.chlorineStatus($0)
-                    }
-                )
-                .padding(.horizontal, 16)
+                HomeReadingColumn(reading: status.sanitizer, showsGauge: true, valueFont: .title2.weight(.bold))
+                    .padding(.horizontal, 16)
 
                 padHeroDivider
 
-                padHeroReadingColumn(
-                    label: "pH",
-                    value: log?.ph,
-                    valueText: log?.ph.map { String(format: "%.1f", $0) } ?? "--",
-                    targetLabel: "Target: 7.2 – 7.8",
-                    idealRange: WaterChemistryRanges.phIdeal,
-                    displayRange: WaterChemistryRanges.phDisplay,
-                    status: log?.ph.map(WaterChemistryRanges.phStatus)
-                )
-                .padding(.leading, 16)
+                HomeReadingColumn(reading: status.ph, showsGauge: true, valueFont: .title2.weight(.bold))
+                    .padding(.leading, 16)
             }
             .padding(24)
         }
@@ -251,62 +176,7 @@ struct DashboardView: View {
         Rectangle()
             .fill(palette.color(.onAccent).opacity(0.22))
             .frame(width: 1)
-            .frame(maxHeight: 88)
-    }
-
-    @ViewBuilder
-    private func padHeroStatusBadge(inRange: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: inRange ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.caption)
-            Text(inRange ? "Last result was within range" : "Some readings outside range")
-                .font(.caption.weight(.semibold))
-        }
-        .foregroundStyle(palette.color(.onAccent))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(inRange ? 0.2 : 0.16))
-        .clipShape(Capsule())
-    }
-
-    private func padHeroReadingColumn(
-        label: String,
-        value: Double?,
-        valueText: String,
-        targetLabel: String,
-        idealRange: ClosedRange<Double>,
-        displayRange: ClosedRange<Double>,
-        status: WaterChemistryReadingStatus?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(palette.color(.onAccent).opacity(0.75))
-
-            Text(valueText)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(palette.color(.onAccent))
-
-            Text(targetLabel)
-                .font(.caption2)
-                .foregroundStyle(palette.color(.onAccent).opacity(0.65))
-
-            ChemistryRangeGauge(
-                value: value,
-                idealRange: idealRange,
-                displayRange: displayRange,
-                status: status
-            )
-            .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var sanitizerTargetLabel: String {
-        let range = viewModel.isBromine
-            ? WaterChemistryRanges.bromineIdeal
-            : WaterChemistryRanges.chlorineIdeal
-        return String(format: "Target: %.1f – %.1f ppm", range.lowerBound, range.upperBound)
+            .frame(maxHeight: 140)
     }
 
     private var padMainActionButton: some View {
@@ -329,7 +199,7 @@ struct DashboardView: View {
     }
 
     private var padSecondaryActions: some View {
-        HStack(spacing: AppSpacing.control) {
+        EqualSizeRow(spacing: AppSpacing.control) {
             padActionCard(kind: .usage, destination: UsageLogFormView())
             padActionCard(kind: .weekly, destination: WeeklyLogFormView())
             padActionCard(kind: .maintenance, destination: MaintenanceLogFormView())
@@ -352,10 +222,11 @@ struct DashboardView: View {
                     Text(kind.padActionTitle)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(palette.color(.textPrimary))
+                        .lineLimit(2, reservesSpace: true)
                     Text(kind.padActionSubtitle)
                         .font(.caption)
                         .foregroundStyle(palette.color(.textSecondary))
-                        .lineLimit(2)
+                        .lineLimit(2, reservesSpace: true)
                 }
 
                 Spacer(minLength: 0)
@@ -364,9 +235,7 @@ struct DashboardView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.color(.textTertiary))
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .appCard(palette: palette, radius: AppSpacing.largeCardRadius)
+            .appCard(palette: palette, radius: AppSpacing.largeCardRadius, fillsHeight: true)
         }
         .buttonStyle(.plain)
     }
@@ -420,7 +289,13 @@ struct DashboardView: View {
         NavigationLink {
             activityDetail(item)
         } label: {
-            ActivityRowView(row: item.historyRow, isBromine: viewModel.isBromine, palette: palette)
+            ActivityRowView(
+                row: item.historyRow,
+                isBromine: viewModel.isBromine,
+                palette: palette,
+                phTarget: viewModel.phTarget,
+                sanitizerTarget: viewModel.sanitizerTarget
+            )
                 .padding(12)
         }
         .buttonStyle(.plain)
@@ -570,82 +445,66 @@ struct DashboardView: View {
         }
     }
 
-    private var padFooter: some View {
-        HStack(alignment: .top) {
-            Text("Keep your water balanced for a safe and enjoyable soak.")
+    private var homeFooter: some View {
+        let status = viewModel.homeStatus(log: viewModel.latestDailyLog)
+        return HStack(alignment: .top, spacing: 12) {
+            Text(status.footer)
                 .font(.caption)
                 .foregroundStyle(palette.color(.textSecondary))
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            PadFooterInfoLink(palette: palette)
+            TargetRangesInfoLink(palette: palette)
         }
-    }
-
-    private func isWithinTypicalRange(_ log: HotTubDailyLog?) -> Bool {
-        guard let log else { return false }
-        return !viewModel.phOutOfRange(log.ph) && !viewModel.sanitizerOutOfRange(log.primarySanitizerPpm)
     }
 
     private var statusCard: some View {
-        let log = viewModel.latestDailyLog
-        let hasData = log != nil
-        let isStale = viewModel.readingsAreStale
-        let inRange = isWithinTypicalRange(log)
-        let gradient = statusCardGradient(hasData: hasData, isStale: isStale, inRange: inRange)
+        let status = viewModel.homeStatus(log: viewModel.latestDailyLog)
 
         return VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "drop.fill")
-                    .font(.title2)
-                    .foregroundStyle(palette.color(.onAccent))
-                    .padding(10)
-                    .background(Color.white.opacity(isStale ? 0.15 : 0.2))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Image(systemName: "drop.fill")
+                .font(.title2)
+                .foregroundStyle(palette.color(.onAccent))
+                .padding(10)
+                .background(Color.white.opacity(0.2))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                Spacer()
+            HomeStatusCopy(status: status, palette: palette, linksDueReminder: true)
 
-                if hasData, !isStale, let log {
-                    Text("Last water test: \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(palette.color(.onAccent))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.2))
-                        .clipShape(Capsule())
-                }
-            }
-
-            if isStale {
-                staleStatusContent(log: log)
-            } else {
-                freshStatusContent(log: log, hasData: hasData)
+            HStack(alignment: .top, spacing: 0) {
+                HomeReadingColumn(reading: status.sanitizer, showsGauge: false, valueFont: .title3.weight(.bold))
+                Rectangle()
+                    .fill(palette.color(.onAccent).opacity(0.25))
+                    .frame(width: 1)
+                    .padding(.vertical, 4)
+                HomeReadingColumn(reading: status.ph, showsGauge: false, valueFont: .title3.weight(.bold))
+                    .padding(.leading, 16)
             }
         }
         .padding(20)
-        .background(gradient)
+        .background(statusCardGradient(for: status))
         .clipShape(RoundedRectangle(cornerRadius: AppSpacing.largeCardRadius, style: .continuous))
-        .shadow(color: .black.opacity(isStale ? 0.04 : 0.06), radius: 8, y: 4)
-        .animation(.spring(response: 0.35), value: isStale)
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+        .animation(.spring(response: 0.35), value: status)
     }
 
-    private func statusCardGradient(hasData: Bool, isStale: Bool, inRange: Bool = true) -> LinearGradient {
+    private func statusCardGradient(for status: HomeStatusPresentation) -> LinearGradient {
         let colors: [Color]
-        if !hasData {
+        if !status.hasData {
             colors = [palette.color(.heroEmptyStart), palette.color(.heroEmptyEnd)]
-        } else if isStale {
+        } else if status.readingsOutsideTarget {
+            colors = [
+                palette.color(.accentIndigo),
+                palette.color(.accentBlue).opacity(0.88),
+            ]
+        } else if status.isDue {
             colors = [
                 palette.color(.heroEmptyStart),
                 palette.color(.heroEmptyEnd).opacity(0.88),
             ]
-        } else if inRange {
+        } else {
             colors = [
                 palette.color(.accentBlue),
                 palette.color(.accentIndigo).opacity(0.92),
-            ]
-        } else {
-            colors = [
-                palette.color(.accentIndigo),
-                palette.color(.accentBlue).opacity(0.88),
             ]
         }
         return LinearGradient(
@@ -653,107 +512,6 @@ struct DashboardView: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-    }
-
-    @ViewBuilder
-    private func freshStatusContent(log: HotTubDailyLog?, hasData: Bool) -> some View {
-        Text(hasData ? "Water status" : "Your hot tub")
-            .font(.body)
-            .foregroundStyle(palette.color(.onAccent).opacity(0.85))
-
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(
-                log.map {
-                    viewModel.heroHeadline(
-                        ph: $0.ph,
-                        sanitizer: $0.primarySanitizerPpm,
-                        hasData: true,
-                        isDailyDue: false
-                    )
-                } ?? "Ready to start?"
-            )
-            .font(.system(size: 28, weight: .heavy))
-            .foregroundStyle(palette.color(.onAccent))
-            .lineLimit(2)
-            .minimumScaleFactor(0.7)
-
-            if hasData {
-                AppInfoButton(
-                    message: "Typical ranges are for reference only. Test your water and follow product labels before adding chemicals.",
-                    accessibilityLabel: "About typical ranges",
-                    foreground: palette.color(.onAccent).opacity(0.75)
-                )
-            }
-
-            Spacer(minLength: 0)
-        }
-
-        readingsRow(log: log)
-    }
-
-    @ViewBuilder
-    private func staleStatusContent(log: HotTubDailyLog?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Check water today")
-                .font(.system(size: 28, weight: .heavy))
-                .foregroundStyle(palette.color(.onAccent))
-
-            if let log {
-                Text("Last water test \(RelativeDateFormatter.relativeDayAndTime(for: log.loggedAt))")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(palette.color(.onAccent).opacity(0.75))
-            }
-        }
-
-        readingsRow(log: log)
-            .opacity(0.72)
-    }
-
-    @ViewBuilder
-    private func readingsRow(log: HotTubDailyLog?) -> some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.isBromine ? "Bromine" : "Chlorine")
-                    .font(.caption)
-                    .foregroundStyle(palette.color(.onAccent).opacity(0.65))
-                HStack(spacing: 6) {
-                    Text(sanitizerDisplay(log))
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(palette.color(.onAccent))
-                    if let log, viewModel.sanitizerOutOfRange(log.primarySanitizerPpm) {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(palette.color(.accentYellow))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Rectangle()
-                .fill(palette.color(.onAccent).opacity(0.25))
-                .frame(width: 1, height: 40)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("pH")
-                    .font(.caption)
-                    .foregroundStyle(palette.color(.onAccent).opacity(0.65))
-                HStack(spacing: 6) {
-                    Text(log?.ph.map { String(format: "%.1f", $0) } ?? "--")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(palette.color(.onAccent))
-                    if let log, viewModel.phOutOfRange(log.ph) {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundStyle(palette.color(.accentYellow))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 16)
-        }
-    }
-
-    private func sanitizerDisplay(_ log: HotTubDailyLog?) -> String {
-        guard let ppm = log?.primarySanitizerPpm else { return "-- ppm" }
-        return String(format: "%.1f ppm", ppm)
     }
 
     private var actionsSection: some View {
@@ -814,7 +572,7 @@ struct DashboardView: View {
                 MaintenanceLogFormView()
             } label: {
                 subActionTile(
-                    title: "Record maintenance",
+                    title: "Record",
                     systemImage: ActivityLogKind.maintenance.systemImage,
                     fillToken: ActivityLogKind.maintenance.fillToken,
                     iconToken: ActivityLogKind.maintenance.iconToken
@@ -901,7 +659,13 @@ struct DashboardView: View {
         NavigationLink {
             activityDetail(item)
         } label: {
-            ActivityRowView(row: item.historyRow, isBromine: viewModel.isBromine, palette: palette)
+            ActivityRowView(
+                row: item.historyRow,
+                isBromine: viewModel.isBromine,
+                palette: palette,
+                phTarget: viewModel.phTarget,
+                sanitizerTarget: viewModel.sanitizerTarget
+            )
                 .appCard(palette: palette, padding: 12)
         }
         .buttonStyle(.plain)
@@ -959,7 +723,7 @@ struct DashboardView: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(minWidth: 18, minHeight: 18)
-                        .background(palette.color(.accentRed))
+                        .background(notificationBadgeColor)
                         .clipShape(Circle())
                         .offset(x: 4, y: -4)
                 }
@@ -973,6 +737,18 @@ struct DashboardView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Notifications")
+    }
+
+    /// Badge follows the most urgent reminder in the two-week window.
+    private var notificationBadgeColor: Color {
+        let urgencies = viewModel.dueReminders.map { $0.urgency() }
+        if urgencies.contains(.overdue) {
+            return palette.color(.accentRed)
+        }
+        if urgencies.contains(.dueToday) {
+            return palette.color(.accentOrange)
+        }
+        return palette.color(.accentBlue)
     }
 
     private func handleBellTap() async {
@@ -1046,6 +822,44 @@ private struct NotificationSettingsSheet: View {
     .appPalette(.light)
 }
 
+/// Gives every child the same width and the same height inside a horizontal row.
+private struct EqualSizeRow: Layout {
+    var spacing: CGFloat = 0
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let count = subviews.count
+        guard count > 0 else { return .zero }
+
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? idealWidth(subviews)
+        let childProposal = ProposedViewSize(width: itemWidth(in: width, count: count), height: nil)
+        let height = subviews.map { $0.sizeThatFits(childProposal).height }.max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let count = subviews.count
+        guard count > 0 else { return }
+
+        let width = itemWidth(in: bounds.width, count: count)
+        let childProposal = ProposedViewSize(width: width, height: bounds.height)
+        var x = bounds.minX
+        for subview in subviews {
+            subview.place(at: CGPoint(x: x, y: bounds.minY), anchor: .topLeading, proposal: childProposal)
+            x += width + spacing
+        }
+    }
+
+    private func itemWidth(in totalWidth: CGFloat, count: Int) -> CGFloat {
+        let spaces = spacing * CGFloat(max(count - 1, 0))
+        return max(0, (totalWidth - spaces) / CGFloat(count))
+    }
+
+    private func idealWidth(_ subviews: Subviews) -> CGFloat {
+        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        return widest * CGFloat(subviews.count) + spacing * CGFloat(max(subviews.count - 1, 0))
+    }
+}
+
 // MARK: - iPad dashboard decorations
 
 private struct PadHeroWaveDecoration: View {
@@ -1069,24 +883,130 @@ private struct PadHeroWaveDecoration: View {
     }
 }
 
-private struct PadFooterInfoLink: View {
+private struct TargetRangesInfoLink: View {
     let palette: AppPalette
     @State private var isPresented = false
 
     var body: some View {
-        Button("About water balance") {
+        Button("About target ranges") {
             isPresented = true
         }
         .font(.caption.weight(.medium))
         .foregroundStyle(palette.color(.accentBlue))
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented) {
-            Text("Typical ranges are for reference only. Test your water and follow product labels before adding chemicals.")
+            Text("These comparisons use the targets you saved in Settings. They describe your readings. They do not decide whether the water is safe.")
                 .font(.footnote)
                 .foregroundStyle(palette.color(.textPrimary))
                 .padding(16)
                 .frame(maxWidth: 280)
                 .presentationCompactAdaptation(.popover)
         }
+    }
+}
+
+private struct HomeStatusCopy: View {
+    let status: HomeStatusPresentation
+    let palette: AppPalette
+    var linksDueReminder: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(status.headline)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(palette.color(.onAccent))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let subtitle = status.subtitle {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.color(.onAccent).opacity(0.8))
+            }
+
+            Text(status.comparisonCaption)
+                .font(.caption)
+                .foregroundStyle(palette.color(.onAccent).opacity(0.7))
+
+            if let dueSecondary = status.dueSecondary {
+                if linksDueReminder {
+                    NavigationLink {
+                        DailyLogFormView()
+                    } label: {
+                        dueLabel(dueSecondary)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    dueLabel(dueSecondary)
+                }
+            }
+        }
+    }
+
+    private func dueLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .font(.caption.weight(.semibold))
+            Text(title)
+                .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(palette.color(.accentBlue))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.white)
+        .clipShape(Capsule())
+    }
+}
+
+private struct HomeReadingColumn: View {
+    let reading: HomeReadingPresentation
+    var showsGauge: Bool
+    var valueFont: Font
+
+    @Environment(\.appPalette) private var palette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(reading.name)
+                .font(.caption)
+                .foregroundStyle(palette.color(.onAccent).opacity(0.75))
+
+            Text(reading.valueText)
+                .font(valueFont)
+                .foregroundStyle(palette.color(.onAccent))
+
+            if reading.status != .unknown {
+                HStack(spacing: 4) {
+                    Image(systemName: reading.status.symbolName)
+                        .font(.caption)
+                    Text(reading.status.shortLabel)
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(palette.color(.onAccent))
+            }
+
+            Text("Your target \(WaterChemistryRanges.targetLabel(reading.target, unit: reading.unit))")
+                .font(.caption2)
+                .foregroundStyle(palette.color(.onAccent).opacity(0.65))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if showsGauge, reading.status != .unknown {
+                ChemistryRangeGauge(
+                    value: numericValue,
+                    targetRange: reading.target,
+                    displayRange: reading.displayRange,
+                    status: reading.status.readingStatus
+                )
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(reading.accessibilityText)
+    }
+
+    private var numericValue: Double? {
+        guard reading.status != .unknown else { return nil }
+        let digits = reading.valueText.replacingOccurrences(of: " ppm", with: "")
+        return Double(digits)
     }
 }

@@ -31,6 +31,15 @@ struct HistoryView: View {
         settingsRows.first?.isBromine ?? false
     }
 
+    private var phTarget: ClosedRange<Double> {
+        settingsRows.first?.phTarget ?? WaterChemistryRanges.startingPH
+    }
+
+    private var sanitizerTarget: ClosedRange<Double> {
+        settingsRows.first?.sanitizerTarget
+            ?? (isBromine ? WaterChemistryRanges.startingBromine : WaterChemistryRanges.startingChlorine)
+    }
+
     private var combinedRows: [HistoryRow] {
         var rows: [HistoryRow] = []
         switch logFilter {
@@ -475,7 +484,14 @@ struct HistoryView: View {
         NavigationLink {
             destination(for: row)
         } label: {
-            ActivityRowView(row: row, isBromine: isBromine, palette: palette, showsRelativeDay: false)
+            ActivityRowView(
+                row: row,
+                isBromine: isBromine,
+                palette: palette,
+                phTarget: phTarget,
+                sanitizerTarget: sanitizerTarget,
+                showsRelativeDay: false
+            )
                 .padding(12)
         }
         .buttonStyle(.plain)
@@ -598,14 +614,11 @@ struct HistoryView: View {
     }
 
     private func dailyPhWarning(_ log: HotTubDailyLog) -> Bool {
-        guard let ph = log.ph else { return false }
-        return ph < 7.2 || ph > 7.8
+        RangeStatus(value: log.ph, target: phTarget).isOutsideTarget
     }
 
     private func dailySanitizerWarning(_ log: HotTubDailyLog) -> Bool {
-        guard let ppm = log.primarySanitizerPpm else { return false }
-        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        return !ideal.contains(ppm)
+        RangeStatus(value: log.primarySanitizerPpm, target: sanitizerTarget).isOutsideTarget
     }
 }
 

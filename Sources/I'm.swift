@@ -12,26 +12,38 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(DisclaimerAcceptance.storageKey) private var acceptedDisclaimerVersion = ""
+    @Query private var settingsRows: [AppSettings]
+
+    private var savedSettings: AppSettings? {
+        settingsRows.first
+    }
 
     var body: some View {
         Group {
-            if DisclaimerAcceptance.isAccepted(acceptedDisclaimerVersion) {
+            if !DisclaimerAcceptance.isAccepted(acceptedDisclaimerVersion) {
+                DisclaimerView {
+                    acceptedDisclaimerVersion = DisclaimerAcceptance.currentVersion
+                }
+            } else if let savedSettings, savedSettings.targetsConfirmed {
                 MainTabView()
                     .onAppear {
-                        HotTubModelContainer.seedIfNeeded(in: modelContext)
                         guard !PreviewEnvironment.isActive else { return }
                         Task {
                             await ReminderNotificationService.shared.refreshAuthorizationStatus()
                             await ReminderNotificationService.shared.reschedule(context: modelContext)
                         }
                     }
+            } else if let savedSettings {
+                TargetRangesSetupView(settings: savedSettings)
             } else {
-                DisclaimerView {
-                    acceptedDisclaimerVersion = DisclaimerAcceptance.currentVersion
-                }
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .appPalette(colorScheme)
+        .onAppear {
+            HotTubModelContainer.seedIfNeeded(in: modelContext)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
             guard !PreviewEnvironment.isActive else { return }
             HotTubDataRefresh.notifyLocalStoreChanged()
@@ -105,6 +117,10 @@ private struct ContentViewPreviewHost: View {
                     forKey: DisclaimerAcceptance.storageKey
                 )
                 HotTubModelContainer.seedIfNeeded(in: modelContext)
+                if let settings = (try? modelContext.fetch(FetchDescriptor<AppSettings>()))?.first {
+                    settings.targetsConfirmed = true
+                    try? modelContext.save()
+                }
                 seedPreviewSampleDailyLogs(into: modelContext)
             }
     }

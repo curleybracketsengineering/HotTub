@@ -85,6 +85,15 @@ enum HotTubCSVService {
         "capacity_unit",
         "measurement_system",
         "sanitizer_type",
+        "ph_target_minimum",
+        "ph_target_maximum",
+        "chlorine_target_minimum",
+        "chlorine_target_maximum",
+        "bromine_target_minimum",
+        "bromine_target_maximum",
+        "combined_chlorine_target_minimum",
+        "combined_chlorine_target_maximum",
+        "targets_confirmed",
     ]
 
     private static let columnAliases: [String: String] = [
@@ -273,6 +282,15 @@ enum HotTubCSVService {
             "capacity_unit": settings.capacityUnit,
             "measurement_system": settings.measurementSystem,
             "sanitizer_type": settings.sanitizerType,
+            "ph_target_minimum": formatNumber(settings.phTargetMinimum),
+            "ph_target_maximum": formatNumber(settings.phTargetMaximum),
+            "chlorine_target_minimum": formatNumber(settings.chlorineTargetMinimum),
+            "chlorine_target_maximum": formatNumber(settings.chlorineTargetMaximum),
+            "bromine_target_minimum": formatNumber(settings.bromineTargetMinimum),
+            "bromine_target_maximum": formatNumber(settings.bromineTargetMaximum),
+            "combined_chlorine_target_minimum": formatNumber(settings.combinedChlorineTargetMinimum),
+            "combined_chlorine_target_maximum": formatNumber(settings.combinedChlorineTargetMaximum),
+            "targets_confirmed": settings.targetsConfirmed ? "true" : "false",
         ]
     }
 
@@ -417,6 +435,21 @@ enum HotTubCSVService {
         }
         if let sanitizer = fields["sanitizer_type"]?.trimmingCharacters(in: .whitespaces), !sanitizer.isEmpty {
             settings.sanitizerType = sanitizer
+        }
+        if let value = parseOptionalDouble(fields["ph_target_minimum"]) { settings.phTargetMinimum = value }
+        if let value = parseOptionalDouble(fields["ph_target_maximum"]) { settings.phTargetMaximum = value }
+        if let value = parseOptionalDouble(fields["chlorine_target_minimum"]) { settings.chlorineTargetMinimum = value }
+        if let value = parseOptionalDouble(fields["chlorine_target_maximum"]) { settings.chlorineTargetMaximum = value }
+        if let value = parseOptionalDouble(fields["bromine_target_minimum"]) { settings.bromineTargetMinimum = value }
+        if let value = parseOptionalDouble(fields["bromine_target_maximum"]) { settings.bromineTargetMaximum = value }
+        if let value = parseOptionalDouble(fields["combined_chlorine_target_minimum"]) {
+            settings.combinedChlorineTargetMinimum = value
+        }
+        if let value = parseOptionalDouble(fields["combined_chlorine_target_maximum"]) {
+            settings.combinedChlorineTargetMaximum = value
+        }
+        if let flag = fields["targets_confirmed"]?.trimmingCharacters(in: .whitespaces).lowercased(), !flag.isEmpty {
+            settings.targetsConfirmed = flag == "true" || flag == "1"
         }
         settings.updatedAt = .now
         return true

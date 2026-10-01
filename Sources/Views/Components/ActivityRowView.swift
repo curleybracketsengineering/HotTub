@@ -9,6 +9,8 @@ struct ActivityRowView: View {
     let row: HistoryRow
     let isBromine: Bool
     let palette: AppPalette
+    var phTarget: ClosedRange<Double> = WaterChemistryRanges.startingPH
+    var sanitizerTarget: ClosedRange<Double> = WaterChemistryRanges.startingChlorine
     /// When false, shows time only (for day-grouped history lists).
     var showsRelativeDay: Bool = true
 
@@ -76,13 +78,10 @@ struct ActivityRowView: View {
     }
 
     private func phWarning(_ log: HotTubDailyLog) -> Bool {
-        guard let ph = log.ph else { return false }
-        return ph < 7.2 || ph > 7.8
+        RangeStatus(value: log.ph, target: phTarget).isOutsideTarget
     }
 
     private func sanitizerWarning(_ log: HotTubDailyLog) -> Bool {
-        guard let ppm = log.primarySanitizerPpm else { return false }
-        let ideal = isBromine ? WaterChemistryRanges.bromineIdeal : WaterChemistryRanges.chlorineIdeal
-        return !ideal.contains(ppm)
+        RangeStatus(value: log.primarySanitizerPpm, target: sanitizerTarget).isOutsideTarget
     }
 }

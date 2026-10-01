@@ -121,6 +121,7 @@ private struct SetupSettingsForm: View {
     private var stackedSettingsContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.section) {
             hotTubSection
+            ComparisonTargetsSettingsSection(settings: settings, onSave: touch)
             maintenanceScheduleSection
             dataSection
             safetySection
@@ -131,6 +132,7 @@ private struct SetupSettingsForm: View {
         HStack(alignment: .top, spacing: AppSpacing.section) {
             VStack(alignment: .leading, spacing: AppSpacing.section) {
                 hotTubSection
+                ComparisonTargetsSettingsSection(settings: settings, onSave: touch)
                 maintenanceScheduleSection
                 dataSection
             }
