@@ -235,16 +235,7 @@ struct HistoryView: View {
 
     private func portraitMultiEntryDetail(_ section: HistoryDaySection) -> some View {
         VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppSpacing.control) {
-                    ForEach(section.rows) { row in
-                        portraitEntryChip(row, isSelected: row.id == selectedRowID)
-                    }
-                }
-                .padding(.horizontal, PadContentLayout.horizontalGutter)
-                .padding(.vertical, 12)
-            }
-            .background(palette.color(.backgroundSecondary))
+            dayEntryMenu(section)
 
             if let selectedRow {
                 destination(for: selectedRow)
@@ -255,28 +246,71 @@ struct HistoryView: View {
         }
     }
 
-    private func portraitEntryChip(_ row: HistoryRow, isSelected: Bool) -> some View {
-        Button {
-            selectedRowID = row.id
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: splitRowIcon(for: row))
-                    .font(.caption.weight(.semibold))
-                Text(row.title)
-                    .font(.subheadline.weight(.semibold))
-                Text(RelativeDateFormatter.timeOnly(for: row.sortMoment))
-                    .font(.caption)
-                    .foregroundStyle(isSelected ? .white.opacity(0.85) : palette.color(.textSecondary))
+    /// One control for every log on the selected day. A horizontal chip row clips in the detail column.
+    private func dayEntryMenu(_ section: HistoryDaySection) -> some View {
+        let selected = section.rows.first { $0.id == selectedRowID } ?? section.rows.first
+
+        return Menu {
+            ForEach(section.rows) { row in
+                Button {
+                    withAnimation(.spring(response: 0.35)) {
+                        selectedRowID = row.id
+                    }
+                } label: {
+                    if row.id == selected?.id {
+                        Label(dayEntryMenuTitle(row), systemImage: "checkmark")
+                    } else {
+                        Label(dayEntryMenuTitle(row), systemImage: splitRowIcon(for: row))
+                    }
+                }
             }
-            .foregroundStyle(isSelected ? .white : palette.color(.textPrimary))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? palette.color(.accentBlue) : palette.color(.surfaceCard))
-            )
+        } label: {
+            dayEntryMenuLabel(selected)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Entry")
+        .accessibilityValue(selected.map(dayEntryMenuTitle) ?? "")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, PadContentLayout.horizontalGutter)
+        .padding(.vertical, 12)
+        .background(palette.color(.backgroundSecondary))
+    }
+
+    private func dayEntryMenuLabel(_ row: HistoryRow?) -> some View {
+        HStack(spacing: 8) {
+            if let row {
+                Image(systemName: splitRowIcon(for: row))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(splitRowAccent(for: row))
+
+                Text(row.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(palette.color(.textPrimary))
+                    .lineLimit(1)
+
+                Text(RelativeDateFormatter.timeOnly(for: row.sortMoment))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(palette.color(.textSecondary))
+                    .layoutPriority(1)
+            }
+
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(palette.color(.accentBlue))
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: AppSpacing.minTap)
+        .background(palette.color(.surfaceCard))
+        .clipShape(Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(palette.color(.separator), lineWidth: 1)
+        }
+    }
+
+    private func dayEntryMenuTitle(_ row: HistoryRow) -> String {
+        "\(row.title), \(RelativeDateFormatter.timeOnly(for: row.sortMoment))"
     }
 
     private var historySplitSidebar: some View {
