@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum FormValidation {
+nonisolated enum FormValidation {
     static let outOfRangeMessage = "Out of validation range"
 
     /// Inline blur validation for optional numeric range fields (empty is valid).
